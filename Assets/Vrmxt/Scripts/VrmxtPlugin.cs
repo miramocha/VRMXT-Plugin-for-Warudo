@@ -20,7 +20,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Description = "VRMXT extensions for Warudo Characters (v1: particle VFX)",
     Version = "0.0.4",
     Author = "Mira",
-    SupportUrl = "https://github.com/miramocha/UniVRMXT"
+    SupportUrl = "https://steamcommunity.com/sharedfiles/filedetails/?id=3767350210"
 )]
 public sealed class VrmxtPlugin : Plugin
 {

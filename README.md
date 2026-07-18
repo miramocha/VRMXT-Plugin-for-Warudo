@@ -3,6 +3,8 @@
 Warudo plugin that attaches VRMXT particle VFX (`VRMXT_vfx`) onto Character assets
 after load.
 
+**Install (Warudo):** [Steam Workshop — VRMXT](https://steamcommunity.com/sharedfiles/filedetails/?id=3767350210)
+
 ## Requirements
 
 - Unity `2021.3.45f2`
@@ -30,3 +32,11 @@ after load.
 ## Version
 
 Plugin attribute version: see `Assets/Vrmxt/Scripts/VrmxtPlugin.cs`.
+
+## Links
+
+| | |
+|--|--|
+| Steam Workshop | https://steamcommunity.com/sharedfiles/filedetails/?id=3767350210 |
+| Specs (Warudo host) | https://github.com/miramocha/Extended-VRM-Specs/blob/main/implementations/warudo-vrmxt.md |
+| UniVRMXT | https://github.com/miramocha/UniVRMXT |
