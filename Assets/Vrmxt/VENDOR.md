@@ -42,9 +42,10 @@ assets). `VrmxtPlugin` binds the packaged particle mat and sets
 `Assets/ExportSettings.asset` and replace `REPLACE_ME` paths (or use Warudo → Mod
 Settings in the Editor).
 
-UMod sometimes deletes `ExportSettings.asset.meta` when scripts change and Unity
-regains focus; Unity regenerates the `.meta` on reimport. Because both files are
-gitignored, that churn stays local and does not dirty the branch.
+UMod sometimes deletes or empties `ExportSettings` when scripts change and Unity
+regains focus. Keep a local twin `Assets/ExportSettings.asset.old` (gitignored;
+UMod does not touch it) via `umod/export-settings.ps1 -Backup` / `-Restore`.
+See `umod/README.md`.
 
 Warudo humanoid normalize zeros bone local rotations. Host (not UniVRMXT) applies
 `VrmxtWarudoBoneAxisCorrection` after attach so emitter local +Y matches glTF

@@ -109,8 +109,11 @@ InitTestScene*.unity*
 # Local UMod Mod Settings (machine-specific asset/export paths). UMod may rewrite
 # or delete ExportSettings.asset.meta when focusing Unity — keep local-only.
 # Template: umod/ExportSettings.example.asset
+# Backup (UMod does not touch *.old): umod/export-settings.ps1 -Backup / -Restore
 /[Aa]ssets/ExportSettings.asset
 /[Aa]ssets/ExportSettings.asset.meta
+/[Aa]ssets/ExportSettings.asset.old
+/[Aa]ssets/ExportSettings.asset.meta.old
 
 # UMod generated caches
 /[Aa]ssets/UModData/ResourcesGenerated/
