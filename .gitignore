@@ -105,3 +105,12 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Local UMod Mod Settings (machine-specific asset/export paths). UMod may rewrite
+# or delete ExportSettings.asset.meta when focusing Unity — keep local-only.
+# Template: umod/ExportSettings.example.asset
+/[Aa]ssets/ExportSettings.asset
+/[Aa]ssets/ExportSettings.asset.meta
+
+# UMod generated caches
+/[Aa]ssets/UModData/ResourcesGenerated/

@@ -25,7 +25,26 @@ Build failures after "Compile successful!" → check
 and `%LOCALAPPDATA%\Unity\Editor\Editor.log`. Keep Mod Settings
 **Clear Console On Build** unchecked so console keeps errors. Shared UniVRMXT
 mapper already avoids that API (`GraphicsSettings.currentRenderPipeline == null` +
-`Shader.Find`; packaged `UniVRMXT/Particles Unlit` via Resources).
+`Shader.Find`; packaged `VRMXT/Particles Unlit`).
+
+Warudo handbook ([Plugin Mod](https://docs.warudo.app/docs/scripting/plugin-mod),
+[Plugins — Loading Unity Assets](https://docs.warudo.app/docs/scripting/api/plugins)):
+place shaders/materials **inside the mod folder** (`Assets/Vrmxt/…`) and load at runtime
+with **`ModHost.Assets.Load`**, not `Resources.Load` (Unity Resources cannot see uMod
+assets). `VrmxtPlugin` binds the packaged particle mat and sets
+`PreferPackagedParticleMaterial` so transparent ShaderLab is used instead of host BIRP
+`Shader.Find` names that may lack alpha.
+
+## Local ExportSettings (do not commit)
+
+`Assets/ExportSettings.asset` holds **machine-specific** `modAssetPath` /
+`modExportPath`. It is **gitignored**. Copy `umod/ExportSettings.example.asset` →
+`Assets/ExportSettings.asset` and replace `REPLACE_ME` paths (or use Warudo → Mod
+Settings in the Editor).
+
+UMod sometimes deletes `ExportSettings.asset.meta` when scripts change and Unity
+regains focus; Unity regenerates the `.meta` on reimport. Because both files are
+gitignored, that churn stays local and does not dirty the branch.
 
 Warudo humanoid normalize zeros bone local rotations. Host (not UniVRMXT) applies
 `VrmxtWarudoBoneAxisCorrection` after attach so emitter local +Y matches glTF
@@ -42,7 +61,7 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Uses **ReverseX**
 
 - Format: `VrmxtVfx.cs`, `GlbChunks.cs`, `GltfImageBytes.cs`
 - Vfx: Runtime, Instance, Mapper, Data, Importer, GlbTextures, NodeResolver, OwnedParticleMaterial
-- Shaders: `Shaders/UniVRMXTParticlesUnlit.shader` (`UniVRMXT/Particles Unlit`)
+- Shaders: `Shaders/VrmxtParticlesUnlit.shader` (`VRMXT/Particles Unlit`)
 - Resources: `Resources/UniVRMXT/ParticlesUnlit.mat` (keeps shader in mod/player builds)
 
 ## Excluded (sync later if needed)
