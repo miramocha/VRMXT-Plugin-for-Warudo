@@ -1,4 +1,6 @@
 using System;
+using UniVRMXT.Format;
+using UniVRMXT.Vfx;
 using UnityEngine;
 using Warudo.Core.Utils;
 using Warudo.Plugins.Core.Assets.Character;

@@ -1,33 +1,37 @@
 using UnityEngine;
-/// <summary>
-/// Destroys the owned particle material when the emitter GameObject is destroyed.
-/// Must live in its own file — Unity MonoBehaviour script discovery requires matching filename.
-/// </summary>
-[DisallowMultipleComponent]
-public sealed class VrmxtVfxOwnedParticleMaterial : MonoBehaviour
+
+namespace UniVRMXT.Vfx
 {
-    private void OnDestroy()
+    /// <summary>
+    /// Destroys the owned particle material when the emitter GameObject is destroyed.
+    /// Must live in its own file — Unity MonoBehaviour script discovery requires matching filename.
+    /// </summary>
+    [DisallowMultipleComponent]
+    public sealed class VrmxtVfxOwnedParticleMaterial : MonoBehaviour
     {
-        var renderer = GetComponent<ParticleSystemRenderer>();
-        if (renderer == null)
+        private void OnDestroy()
         {
-            return;
-        }
+            var renderer = GetComponent<ParticleSystemRenderer>();
+            if (renderer == null)
+            {
+                return;
+            }
 
-        var material = renderer.sharedMaterial;
-        if (!VrmxtVfxParticleSystemMapper.IsOwnedParticleMaterial(material))
-        {
-            return;
-        }
+            var material = renderer.sharedMaterial;
+            if (!VrmxtVfxParticleSystemMapper.IsOwnedParticleMaterial(material))
+            {
+                return;
+            }
 
-        renderer.sharedMaterial = null;
-        if (Application.isPlaying)
-        {
-            Destroy(material);
-        }
-        else
-        {
-            DestroyImmediate(material);
+            renderer.sharedMaterial = null;
+            if (Application.isPlaying)
+            {
+                Destroy(material);
+            }
+            else
+            {
+                DestroyImmediate(material);
+            }
         }
     }
 }

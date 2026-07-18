@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
+using UniVRMXT.Vfx;
 using UnityEngine;
 
 /// <summary>
