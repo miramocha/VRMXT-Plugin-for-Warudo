@@ -12,28 +12,28 @@ MonoBehaviour:
   m_Script: {fileID: -2028264498, guid: 4d9ac0cbb6dcbc8428255d2df10dafee, type: 3}
   m_Name: ExportSettings
   m_EditorClassIdentifier: 
-  activeProfile: 1
+  activeProfile: 0
   exportProfiles:
   - referencePaths: []
     modName: VRMXT
     modAuthor: Mira
-    modVersion: 1.0.0
+    modVersion: 0.0.4
     modDescription: 
-    modAssetPath: D:/MiraGameDev/VRMXT Plugin for Warudo/Assets/Vrmxt
-    modExportPath: C:/Program Files (x86)/Steam/steamapps/common/Warudo/Warudo_Data/StreamingAssets/Plugins
+    modAssetPath: REPLACE_ME/Assets/Vrmxt
+    modExportPath: REPLACE_ME/Warudo_Data/StreamingAssets/Plugins
     modIcon: {fileID: 0}
   - referencePaths: []
     modName: TestPlugin
     modAuthor: Mira
     modVersion: 1.0.0
     modDescription: UMod smoke test (Hello World clone)
-    modAssetPath: D:/MiraGameDev/VRMXT Plugin for Warudo/Assets/TestPlugin
-    modExportPath: C:/Program Files (x86)/Steam/steamapps/common/Warudo/Warudo_Data/StreamingAssets/Plugins
+    modAssetPath: REPLACE_ME/Assets/TestPlugin
+    modExportPath: REPLACE_ME/Warudo_Data/StreamingAssets/Plugins
     modIcon: {fileID: 0}
   logLevel: 3
   optimizeMode: 0
   compressionLevel: 2
-  clearConsoleOnBuild: 1
+  clearConsoleOnBuild: 0
   showOutputDirectory: 1
   buildAndRunInvokeMode: 0
   commandLineExecutable: 

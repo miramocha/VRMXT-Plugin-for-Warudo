@@ -1,5 +1,6 @@
 using System;
-using UniGLTF;
+using UniVRMXT.Format;
+using UniVRMXT.Vfx;
 using UnityEngine;
 using Warudo.Core.Utils;
 using Warudo.Plugins.Core.Assets.Character;
@@ -44,9 +45,17 @@ public static class VrmxtCharacterApply
             return null;
         }
 
-        var root = character.GameObject;
-        if (root == null || glbBytes == null || glbBytes.Length == 0)
+        // UMod compile: do not read CharacterAsset.GameObject (CoreModule CS0012).
+        var root = TryFindCharacterRoot(character);
+        if (root == null)
         {
+            Debug.Log("VRMXT: could not find GameObject for Character '" + character.Name + "'.");
+            return null;
+        }
+
+        if (glbBytes == null || glbBytes.Length == 0)
+        {
+            Debug.Log("VRMXT: empty GLB bytes for Character '" + character.Name + "'.");
             return null;
         }
 
@@ -55,7 +64,7 @@ public static class VrmxtCharacterApply
         var resolveNode = CreateNodeResolver(root, glbBytes);
         if (resolveNode == null)
         {
-            Debug.Log("VRMXT: could not resolve glTF nodes for Character " + character.Name);
+            Debug.Log("VRMXT: could not resolve glTF nodes for Character '" + character.Name + "'.");
             return null;
         }
 
@@ -66,12 +75,32 @@ public static class VrmxtCharacterApply
                 out var instance,
                 out var textures))
         {
+            Debug.Log(
+                "VRMXT: no VRMXT_vfx attach on Character '" + character.Name +
+                "' (missing extension, parse fail, or all emitters skipped).");
             return null;
         }
 
+        if (instance.Emitters == null || instance.Emitters.Count == 0)
+        {
+            Debug.Log(
+                "VRMXT: VRMXT_vfx present but 0 emitters resolved on '" + character.Name +
+                "' (node name mismatch vs scene hierarchy?). Root='" + root.name + "'.");
+            Object.Destroy(instance);
+            textures?.Dispose();
+            return null;
+        }
+
+        // Warudo normalize zeros bone locals; restore glTF rest frame so +Y emit matches UniVRM/Blender.
+        if (GlbChunks.TryExtractJson(glbBytes, out var gltfJson))
+        {
+            VrmxtWarudoBoneAxisCorrection.Apply(instance, gltfJson);
+        }
+
+        var particleCount = instance.ParticleSystems != null ? instance.ParticleSystems.Count : 0;
         Debug.Log(
-            $"VRMXT: attached VFX on Character '{character.Name}' " +
-            $"({instance.Emitters.Count} emitter(s)).");
+            "VRMXT: attached VFX on Character '" + character.Name + "' root='" + root.name +
+            "' emitters=" + instance.Emitters.Count + " particles=" + particleCount + ".");
 
         return new Result
         {
@@ -97,15 +126,178 @@ public static class VrmxtCharacterApply
         Object.Destroy(existing);
     }
 
-    private static Func<int, Transform> CreateNodeResolver(GameObject root, byte[] glbBytes)
+    /// <summary>
+    /// Resolve Character root without static <c>CharacterAsset.GameObject</c> (UMod CS0012).
+    /// Uses <c>dynamic</c> to read Warudo Unity refs at runtime, then name-match fallback.
+    /// </summary>
+    public static GameObject TryFindCharacterRoot(CharacterAsset character)
     {
-        var runtime = root.GetComponent<RuntimeGltfInstance>();
-        if (runtime != null && runtime.Nodes != null && runtime.Nodes.Count > 0)
+        if (character == null)
         {
-            var nodes = runtime.Nodes;
-            return index => index >= 0 && index < nodes.Count ? nodes[index] : null;
+            return null;
         }
 
+        // Warudo/UMod: cannot touch GameObject/Transform members statically (CoreModule CS0012).
+        // dynamic → runtime binder; log what Warudo actually exposes.
+        try
+        {
+            dynamic d = character;
+            var viaGameObject = AsGameObject(d.GameObject, "GameObject");
+            var viaRoot = AsGameObjectFromTransform(d.RootTransform, "RootTransform");
+            var viaMain = AsGameObjectFromTransform(d.MainTransform, "MainTransform");
+            var viaParent = AsGameObjectFromTransform(d.ParentTransform, "ParentTransform");
+            var viaAnimator = AsGameObjectFromAnimator(d.Animator, "Animator");
+
+            Debug.Log(
+                "VRMXT: Character '" + character.Name + "' transforms — " +
+                "GameObject=" + Describe(viaGameObject) +
+                ", RootTransform=" + Describe(viaRoot) +
+                ", MainTransform=" + Describe(viaMain) +
+                ", ParentTransform=" + Describe(viaParent) +
+                ", Animator=" + Describe(viaAnimator));
+
+            if (viaGameObject != null)
+            {
+                return viaGameObject;
+            }
+
+            if (viaRoot != null)
+            {
+                return viaRoot;
+            }
+
+            if (viaMain != null)
+            {
+                return viaMain;
+            }
+
+            if (viaAnimator != null)
+            {
+                return viaAnimator;
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("VRMXT: dynamic Warudo transform probe failed: " + e.Message);
+        }
+
+        return TryFindCharacterRootByName(character.Name);
+    }
+
+    private static GameObject AsGameObject(object value, string label)
+    {
+        try
+        {
+            return value as GameObject;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("VRMXT: " + label + " cast failed: " + e.Message);
+            return null;
+        }
+    }
+
+    private static GameObject AsGameObjectFromTransform(object value, string label)
+    {
+        try
+        {
+            var t = value as Transform;
+            return t != null ? t.gameObject : null;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("VRMXT: " + label + " cast failed: " + e.Message);
+            return null;
+        }
+    }
+
+    private static GameObject AsGameObjectFromAnimator(object value, string label)
+    {
+        try
+        {
+            var a = value as Animator;
+            return a != null ? a.gameObject : null;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("VRMXT: " + label + " cast failed: " + e.Message);
+            return null;
+        }
+    }
+
+    private static string Describe(GameObject go)
+    {
+        if (go == null)
+        {
+            return "null";
+        }
+
+        return "'" + go.name + "' active=" + go.activeInHierarchy;
+    }
+
+    private static GameObject TryFindCharacterRootByName(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return null;
+        }
+
+        var transforms = Object.FindObjectsOfType<Transform>(true);
+        GameObject best = null;
+        var bestScore = -1;
+        for (var i = 0; i < transforms.Length; i++)
+        {
+            var t = transforms[i];
+            if (t == null || !string.Equals(t.name, name, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var score = ScoreCandidate(t.gameObject);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = t.gameObject;
+            }
+        }
+
+        if (best == null)
+        {
+            Debug.Log("VRMXT: name-match fallback found no Transform named '" + name + "'.");
+        }
+
+        return best;
+    }
+
+    private static int ScoreCandidate(GameObject go)
+    {
+        var score = 0;
+        if (go.GetComponentInChildren<Animator>(true) != null)
+        {
+            score += 10;
+        }
+
+        if (go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null)
+        {
+            score += 5;
+        }
+
+        if (go.GetComponent<VrmxtVfxInstance>() != null)
+        {
+            score += 3;
+        }
+
+        if (go.transform.parent == null)
+        {
+            score += 1;
+        }
+
+        return score;
+    }
+
+    private static Func<int, Transform> CreateNodeResolver(GameObject root, byte[] glbBytes)
+    {
+        // Prefer GLB name resolve over RuntimeGltfInstance.Nodes (UniGLTF not a UMod ref).
         if (!GlbChunks.TryExtractJson(glbBytes, out var json) ||
             !VrmxtVfxNodeResolver.TryReadNodeNames(json, out var names))
         {
