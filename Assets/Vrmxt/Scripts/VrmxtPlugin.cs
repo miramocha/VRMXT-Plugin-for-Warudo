@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
+using UniVRMXT.Vfx;
 using UnityEngine;
 using Warudo.Core;
 using Warudo.Core.Attributes;
@@ -17,21 +18,91 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (v1: particle VFX)",
-    Version = "1.0.1",
+    Version = "0.0.3",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT"
 )]
 public sealed class VrmxtPlugin : Plugin
 {
+    /// <summary>
+    /// Mod-folder paths (Warudo handbook: load via <see cref="Plugin.ModHost"/>, not
+    /// <c>Resources.Load</c> — Unity Resources cannot see uMod assets).
+    /// </summary>
+    public const string ParticleMaterialAssetPath =
+        "Assets/Vrmxt/Resources/UniVRMXT/ParticlesUnlit.mat";
+
+    public const string ParticleShaderAssetPath =
+        "Assets/Vrmxt/Shaders/VrmxtParticlesUnlit.shader";
+
     private readonly Dictionary<Guid, BoundCharacter> _bound = new();
+    private Material _particleMaterialTemplate;
 
     protected override void OnCreate()
     {
         base.OnCreate();
+        BindPackagedParticleMaterial();
         if (Context.OpenedScene != null)
         {
             BindAllCharacters(Context.OpenedScene);
         }
+    }
+
+    protected override void OnDestroy()
+    {
+        UnbindAll();
+        ClearPackagedParticleMaterial();
+        base.OnDestroy();
+    }
+
+    /// <summary>
+    /// Load packaged particle mat/shader from the mod (handbook: Including Unity Assets +
+    /// <c>ModHost.Assets.Load</c>). Prefer that transparent ShaderLab mat over host BIRP
+    /// <c>Shader.Find</c> names that may lack alpha in Warudo.
+    /// </summary>
+    private void BindPackagedParticleMaterial()
+    {
+        ClearPackagedParticleMaterial();
+
+        try
+        {
+            // Warm shader asset so the material's shader resolves inside the mod.
+            ModHost.Assets.Load<Shader>(ParticleShaderAssetPath);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("VRMXT: ModHost.Assets.Load shader failed: " + e.Message);
+        }
+
+        try
+        {
+            _particleMaterialTemplate = ModHost.Assets.Load<Material>(ParticleMaterialAssetPath);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("VRMXT: ModHost.Assets.Load material failed: " + e.Message);
+            _particleMaterialTemplate = null;
+        }
+
+        if (_particleMaterialTemplate == null)
+        {
+            Debug.LogWarning(
+                "VRMXT: packaged particle material missing at '" + ParticleMaterialAssetPath +
+                "'. Rebuild mod with Assets/Vrmxt/Shaders + Resources. Falling back to Shader.Find.");
+            return;
+        }
+
+        var template = _particleMaterialTemplate;
+        VrmxtVfxParticleSystemMapper.PackagedMaterialProvider = () => template;
+        VrmxtVfxParticleSystemMapper.PreferPackagedParticleMaterial = true;
+        Debug.Log(
+            "VRMXT: ModHost particle material bound '" + ParticleMaterialAssetPath +
+            "' shader='" + (template.shader != null ? template.shader.name : "null") + "'.");
+    }
+
+    private static void ClearPackagedParticleMaterial()
+    {
+        VrmxtVfxParticleSystemMapper.PackagedMaterialProvider = null;
+        VrmxtVfxParticleSystemMapper.PreferPackagedParticleMaterial = false;
     }
 
     public override void OnSceneLoaded(Scene scene, SerializedScene serializedScene)
@@ -45,12 +116,6 @@ public sealed class VrmxtPlugin : Plugin
     {
         UnbindAll();
         base.OnSceneUnloaded(scene);
-    }
-
-    protected override void OnDestroy()
-    {
-        UnbindAll();
-        base.OnDestroy();
     }
 
     public override void OnUpdate()

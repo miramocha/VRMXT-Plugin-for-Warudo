@@ -15,13 +15,26 @@ namespace UniVRMXT.Vfx
         public const string OwnedMaterialNamePrefix = "VRMXT_vfx_Particle";
 
         /// <summary>ShaderLab name of the packaged first-party particle shader.</summary>
-        public const string PackagedShaderName = "UniVRMXT/Particles Unlit";
+        public const string PackagedShaderName = "VRMXT/Particles Unlit";
 
         /// <summary>
         /// <see cref="Resources.Load{T}(string)"/> path for the packaged particle material
         /// (<c>Runtime/Resources/UniVRMXT/ParticlesUnlit.mat</c>). Keeps the shader in builds.
         /// </summary>
         public const string PackagedMaterialResourcesPath = "UniVRMXT/ParticlesUnlit";
+
+        /// <summary>
+        /// Optional host override for the packaged particle material template (e.g. Warudo
+        /// <c>ModHost.LoadAsset</c>). When null, uses <see cref="Resources.Load{T}(string)"/>.
+        /// </summary>
+        public static Func<Material> PackagedMaterialProvider { get; set; }
+
+        /// <summary>
+        /// When true, clone the packaged material before probing host
+        /// <see cref="Shader.Find"/> names. Use for hosts where Unity
+        /// <c>Resources.Load</c> cannot see mod assets (Warudo/UMod).
+        /// </summary>
+        public static bool PreferPackagedParticleMaterial { get; set; }
 
         private static readonly int SurfaceId = Shader.PropertyToID("_Surface");
         private static readonly int BlendId = Shader.PropertyToID("_Blend");
@@ -462,20 +475,24 @@ namespace UniVRMXT.Vfx
         private static Material CreateOwnedParticleMaterial(ParticleSystemRenderer renderer)
         {
             Material material = null;
-            var shader = ResolveParticleShader();
-            if (IsUsableShader(shader))
+
+            if (PreferPackagedParticleMaterial)
             {
-                material = new Material(shader) { name = OwnedMaterialNamePrefix };
+                material = ClonePackagedMaterial();
             }
 
             if (material == null)
             {
-                // Resources material references the packaged shader → kept in player builds.
-                var packaged = Resources.Load<Material>(PackagedMaterialResourcesPath);
-                if (IsUsableMaterial(packaged))
+                var shader = ResolveParticleShader();
+                if (IsUsableShader(shader))
                 {
-                    material = new Material(packaged) { name = OwnedMaterialNamePrefix };
+                    material = new Material(shader) { name = OwnedMaterialNamePrefix };
                 }
+            }
+
+            if (material == null)
+            {
+                material = ClonePackagedMaterial();
             }
 
             if (material == null)
@@ -503,6 +520,38 @@ namespace UniVRMXT.Vfx
             }
 
             return material;
+        }
+
+        private static Material ClonePackagedMaterial()
+        {
+            var packaged = TryGetPackagedMaterialTemplate();
+            if (!IsUsableMaterial(packaged))
+            {
+                return null;
+            }
+
+            return new Material(packaged) { name = OwnedMaterialNamePrefix };
+        }
+
+        private static Material TryGetPackagedMaterialTemplate()
+        {
+            if (PackagedMaterialProvider != null)
+            {
+                try
+                {
+                    var provided = PackagedMaterialProvider();
+                    if (IsUsableMaterial(provided))
+                    {
+                        return provided;
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning("UniVRMXT: PackagedMaterialProvider failed: " + e.Message);
+                }
+            }
+
+            return Resources.Load<Material>(PackagedMaterialResourcesPath);
         }
 
         private static Material TryGetBuiltinParticleMaterial()

@@ -1,4 +1,4 @@
-Shader "UniVRMXT/Particles Unlit"
+Shader "VRMXT/Particles Unlit"
 {
     Properties
     {
@@ -30,7 +30,7 @@ Shader "UniVRMXT/Particles Unlit"
 
         Pass
         {
-            Name "UniVRMXTParticlesUnlit"
+            Name "VRMXTParticlesUnlit"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
