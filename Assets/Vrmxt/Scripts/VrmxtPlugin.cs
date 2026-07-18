@@ -57,6 +57,32 @@ public sealed class VrmxtPlugin : Plugin
     {
         base.OnUpdate();
         ReconcileCharacters();
+        PollActiveStateChanges();
+    }
+
+    /// <summary>
+    /// Poll active; avoid <c>OnActiveStateChange</c> (UMod CS0012 on UnityEvent/CoreModule).
+    /// </summary>
+    private void PollActiveStateChanges()
+    {
+        foreach (var pair in _bound)
+        {
+            var bound = pair.Value;
+            var character = bound.Character;
+            if (character == null)
+            {
+                continue;
+            }
+
+            var active = character.IsNonNullAndActive();
+            if (active == bound.WasActive)
+            {
+                continue;
+            }
+
+            bound.WasActive = active;
+            OnCharacterChanged(pair.Key);
+        }
     }
 
     private void BindAllCharacters(Scene scene)
@@ -131,8 +157,7 @@ public sealed class VrmxtPlugin : Plugin
 
         var bound = new BoundCharacter(character);
         bound.SourceWatchHandle = Watch(character, "Source", () => OnCharacterChanged(character.Id));
-        bound.ActiveHandler = _ => OnCharacterChanged(character.Id);
-        character.OnActiveStateChange.AddListener(bound.ActiveHandler);
+        bound.WasActive = character.IsNonNullAndActive();
         _bound[character.Id] = bound;
 
         OnCharacterChanged(character.Id);
@@ -147,17 +172,9 @@ public sealed class VrmxtPlugin : Plugin
 
         _bound.Remove(characterId);
 
-        if (bound.Character != null)
+        if (bound.Character != null && bound.SourceWatchHandle != Guid.Empty)
         {
-            if (bound.ActiveHandler != null)
-            {
-                bound.Character.OnActiveStateChange.RemoveListener(bound.ActiveHandler);
-            }
-
-            if (bound.SourceWatchHandle != Guid.Empty)
-            {
-                Unwatch(bound.Character, bound.SourceWatchHandle);
-            }
+            Unwatch(bound.Character, bound.SourceWatchHandle);
         }
 
         bound.DisposeApply();
@@ -198,6 +215,9 @@ public sealed class VrmxtPlugin : Plugin
         {
             if (!VrmxtCharacterSource.TryGetPersistentRelativePath(character.Source, out var relativePath))
             {
+                Debug.Log(
+                    "VRMXT: skip Character '" + character.Name +
+                    "' — Source not a local character:// .vrm (Source='" + character.Source + "').");
                 return;
             }
 
@@ -206,6 +226,8 @@ public sealed class VrmxtPlugin : Plugin
                 Debug.Log($"VRMXT: Character file not found at '{relativePath}'.");
                 return;
             }
+
+            Debug.Log("VRMXT: loading '" + relativePath + "' for Character '" + character.Name + "'.");
 
             var bytes = await Context.PersistentDataManager.ReadFileBytesAsync(relativePath);
             if (!_bound.TryGetValue(characterId, out var bound) ||
@@ -220,8 +242,47 @@ public sealed class VrmxtPlugin : Plugin
                 return;
             }
 
+            // Character mesh may appear a few frames after active; retry root find briefly.
+            VrmxtCharacterApply.Result applyResult = null;
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                if (!_bound.TryGetValue(characterId, out bound) ||
+                    bound.Character != character ||
+                    bound.ApplyGeneration != generation)
+                {
+                    return;
+                }
+
+                if (!character.IsNonNullAndActive())
+                {
+                    return;
+                }
+
+                applyResult = VrmxtCharacterApply.Apply(character, bytes);
+                if (applyResult != null)
+                {
+                    break;
+                }
+
+                if (VrmxtCharacterApply.TryFindCharacterRoot(character) != null)
+                {
+                    // Root exists but attach failed — do not spin.
+                    break;
+                }
+
+                await UniTask.Delay(50);
+            }
+
+            if (!_bound.TryGetValue(characterId, out bound) ||
+                bound.Character != character ||
+                bound.ApplyGeneration != generation)
+            {
+                applyResult?.Dispose();
+                return;
+            }
+
             bound.DisposeApply();
-            bound.ApplyResult = VrmxtCharacterApply.Apply(character, bytes);
+            bound.ApplyResult = applyResult;
         }
         catch (Exception e)
         {
@@ -233,7 +294,7 @@ public sealed class VrmxtPlugin : Plugin
     {
         public readonly CharacterAsset Character;
         public Guid SourceWatchHandle;
-        public UnityEngine.Events.UnityAction<bool> ActiveHandler;
+        public bool WasActive;
         public VrmxtCharacterApply.Result ApplyResult;
         public int ApplyGeneration;
 

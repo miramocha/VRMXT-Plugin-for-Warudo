@@ -135,6 +135,9 @@ public static class VrmxtVfxParticleSystemMapper
         renderer.renderMode = ParticleSystemRenderMode.Billboard;
         renderer.alignment = ParticleSystemRenderSpace.View;
         ApplyMaterial(renderer, texture);
+
+        // Stop() above clears playOnAwake start; must Play after configure.
+        particleSystem.Play(true);
     }
 
     /// <summary>
@@ -241,21 +244,20 @@ public static class VrmxtVfxParticleSystemMapper
 
     /// <summary>
     /// Pick an unlit particle shader for the active pipeline (BIRP or URP).
-    /// No hard URP package reference — uses <see cref="Shader.Find"/> + type name check.
+    /// No hard URP package reference — uses <see cref="Shader.Find"/> only.
     /// During ScriptedImporter, <see cref="Shader.Find"/> may return null; callers should
     /// fall back to the default <see cref="ParticleSystem"/> material.
     /// </summary>
     public static Shader ResolveParticleShader()
     {
-        if (IsUniversalRenderPipeline())
+        // Prefer URP particle shaders when present; else BIRP/legacy.
+        // Warudo/UMod: do not use GetType().Name — System.Reflection banned by code security.
+        var urp = FindFirstShader(
+            "Universal Render Pipeline/Particles/Unlit",
+            "Universal Render Pipeline/Particles/Simple Lit");
+        if (urp != null)
         {
-            var urp = FindFirstShader(
-                "Universal Render Pipeline/Particles/Unlit",
-                "Universal Render Pipeline/Particles/Simple Lit");
-            if (urp != null)
-            {
-                return urp;
-            }
+            return urp;
         }
 
         var builtin = FindFirstShader(
@@ -494,13 +496,6 @@ public static class VrmxtVfxParticleSystemMapper
     private static bool IsUsableMaterial(Material material)
     {
         return material != null && IsUsableShader(material.shader);
-    }
-
-    private static bool IsUniversalRenderPipeline()
-    {
-        var asset = GraphicsSettings.currentRenderPipeline;
-        return asset != null &&
-               asset.GetType().Name.IndexOf("Universal", StringComparison.Ordinal) >= 0;
     }
 
     private static Texture ResolveTexture(
