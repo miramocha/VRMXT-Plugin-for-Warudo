@@ -1,0 +1,22 @@
+---
+description: Unity 2021.3 C# language and runtime compatibility
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+# Unity 2021.3 C# language
+
+Unity 2021.3 supports C# 9 syntax with Unity's runtime profile, not the latest installed
+.NET SDK.
+
+- Do not use C# 10+ syntax such as file-scoped namespaces, global `using` directives,
+  `required` members, or newer language features.
+- Avoid `record`, `record struct`, and `init` unless the owning assembly already provides
+  and intentionally uses the required runtime support.
+- Do not add `IsExternalInit` polyfills or change `-langVersion` without explicit approval.
+- Do not assume nullable reference types are enabled repository-wide. Match the owning
+  assembly and surrounding file.
+- Use only BCL APIs available in Unity's configured API compatibility profile and on all
+  package-supported targets, including IL2CPP and WebGL where relevant.
+- Prefer established classes, structs, constructors, and properties over syntax that
+  raises package consumer requirements.

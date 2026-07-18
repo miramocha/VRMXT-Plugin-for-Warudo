@@ -1,0 +1,17 @@
+---
+description: Protect generated code, vendored specifications, and git submodules
+alwaysApply: true
+---
+
+# Generated files and submodules
+
+- Do not edit `*.g.cs` or files marked generated. Change the generator or source schema,
+  then regenerate with the established workflow.
+- Do not edit generated `.sln`, `.csproj`, `Library`, `Temp`, `Obj`, or `Logs` content.
+- Treat paths listed in `.gitmodules` as independent repositories. Do not modify,
+  initialize, update, or commit submodule revisions unless the task requires it.
+- Distinguish first-party package code from vendored specifications and upstream code
+  before making changes.
+- Do not duplicate fixes across generated/package copies. Find the authoritative source.
+- Preserve Git LFS pointer files; do not replace pointers with partial or corrupted binary
+  content.

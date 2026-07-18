@@ -1,0 +1,24 @@
+---
+description: C# naming, formatting, comments, and maintainability
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+# C# style
+
+- Use four spaces, LF endings, Allman braces, and braces for control-flow bodies.
+- Use PascalCase for types, methods, properties, and public members; camelCase for
+  parameters and locals. Prefix interfaces with `I`.
+- Preserve established namespace families and mirror nearby package/folder conventions.
+- Match existing field style in touched legacy files. Prefer `_camelCase` for new
+  nonserialized private fields unless nearby code consistently uses another convention.
+- Never mechanically rename serialized fields. If a rename is required, preserve data
+  with `FormerlySerializedAs` and test migration.
+- Preserve public API names unless the task explicitly includes a compatibility change.
+- Keep one primary public type per file and match filename to that type when practical.
+- Order members consistently with nearby code; keep related lifecycle methods together.
+- Prefer small, focused methods and types. Extract stable repeated logic, but do not build
+  speculative abstractions.
+- Comments explain constraints, compatibility, lifecycle, or why. Remove commented-out
+  code. Add XML documentation where existing public package APIs use it.
+- Match local style when editing generated-era or legacy code; avoid repo-wide reformatting.

@@ -1,0 +1,24 @@
+---
+description: NUnit EditMode test conventions for this Unity project
+globs:
+  - "Packages/**/Tests/**/*.cs"
+  - "Assets/**/Tests/**/*.cs"
+alwaysApply: false
+---
+
+# Unity tests
+
+- Put tests next to owning code (`Tests` tree) and use the existing test `.asmdef`.
+- Follow nearby namespace, fixture, and test naming. Prefer NUnit constraint assertions:
+  `Assert.That(actual, Is.EqualTo(expected))`.
+- Test public behavior first. Do not widen production APIs solely for tests.
+- When a narrow seam is unavoidable, prefer `internal` plus the assembly's established
+  visibility pattern over public test-only members.
+- Do not add `UNITY_EDITOR` branches to runtime behavior merely to make EditMode tests
+  pass. Move editor code to an Editor assembly or inject the dependency.
+- Keep tests deterministic: no wall-clock assumptions, unbounded polling, global-state
+  leaks, network access, or dependency on local untracked assets.
+- Dispose created `GameObject`, temporary assets, native allocations, and event handlers.
+- Do not use `dotnet test`; these tests run through Unity.
+- Do not launch Unity batch tests while this project is open in another Unity instance.
+- Never claim tests passed without observed Unity Test Runner or CI output.

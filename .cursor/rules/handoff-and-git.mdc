@@ -1,0 +1,21 @@
+---
+description: Safe verification and git handoff for VRMXT Plugin for Warudo changes
+alwaysApply: true
+---
+
+# Handoff and git
+
+- Before handoff, inspect `git diff` and verify only task-scoped files changed.
+- Format only touched handwritten code according to `.editorconfig` and nearby style.
+  No repository formatter is currently configured; do not invent one or reformat broadly.
+- For changed C#, check missing/duplicate `using` directives, asmdef references,
+  runtime/editor boundaries, generated-file status, and serialized field compatibility.
+- For Unity assets, verify paired `.meta` handling. For submodules, verify no unintended
+  nested changes or pointer updates.
+- Run proportionate available checks. Unity tests require Unity; do not substitute
+  `dotnet test`.
+- Report checks actually run and any verification not run.
+- Never commit unless explicitly asked. Never push unless explicitly asked.
+- Do not update git config, skip hooks, force-push, hard-reset, or discard user changes.
+- Review diffs skeptically after implementation; prioritize correctness, compatibility,
+  serialization, resource lifetime, and package boundaries over style nits.

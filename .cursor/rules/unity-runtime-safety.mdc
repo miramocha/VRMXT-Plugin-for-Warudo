@@ -1,0 +1,26 @@
+---
+description: Unity runtime, lifecycle, serialization, and Editor API safety
+globs: "**/*.cs"
+alwaysApply: false
+---
+
+# Unity runtime safety
+
+- Cache repeated component/object lookups; do not call `Find*`, `GetComponent`, or UI
+  queries every frame without measured need.
+- Balance subscriptions, callbacks, coroutines, and temporary resources in
+  `OnDisable`, `OnDestroy`, or deterministic disposal paths.
+- Treat shared `ScriptableObject`, material, mesh, and texture data as shared assets.
+  Do not mutate them at runtime unless mutation is intentional.
+- Use `CompareTag` instead of string equality on `tag`.
+- Keep `UnityEditor` APIs out of runtime assemblies and player code.
+- Fully qualify `UnityEngine.Object` when `Object` would be ambiguous with
+  `System.Object`.
+- Check Unity objects with Unity's overloaded null semantics where destroyed-object
+  behavior matters.
+- Avoid allocations, LINQ, reflection, and repeated string creation in hot paths unless
+  profiling shows cost is acceptable.
+- Preserve serialization: supported field types, stable field names, and explicit
+  migration for renamed data.
+- Fix root causes. Do not hide invalid states with broad null guards or swallowed
+  exceptions.

@@ -1,0 +1,22 @@
+---
+description: Unity 2021.3 UI Toolkit UXML and USS constraints
+globs:
+  - "**/*.uxml"
+  - "**/*.uss"
+alwaysApply: false
+---
+
+# UI Toolkit
+
+- USS is Unity's CSS subset. Verify properties and selectors against Unity 2021.3 docs,
+  not current browser CSS documentation.
+- Use supported flex layout. Do not assume CSS Grid, `calc`, `min`, `max`, `clamp`,
+  media queries, generated content, or structural pseudo-selectors work.
+- Keep UXML structural, USS visual, and C# behavioral. Use inline style only for values
+  that genuinely depend on runtime geometry or state.
+- Prefer stable, shallow class selectors. Avoid selectors coupled to deep hierarchy.
+- Cache repeated `Q()` results and register/unregister callbacks symmetrically.
+- Preserve existing naming and style-sheet organization in each package; do not impose
+  game-specific BEM or theme architecture on legacy UI.
+- Test editor UI in its actual panel/inspector context when behavior depends on attachment,
+  geometry, focus, or scheduling.

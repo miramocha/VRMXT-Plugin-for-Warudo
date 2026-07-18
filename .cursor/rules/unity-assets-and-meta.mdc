@@ -1,0 +1,26 @@
+---
+description: Unity asset and .meta GUID safety across Assets and Packages
+globs:
+  - "Assets/**"
+  - "Packages/**"
+alwaysApply: false
+---
+
+# Unity assets and metadata
+
+- Preserve each asset's paired `.meta` when moving, renaming, or deleting it. A GUID
+  identifies references; regenerating it breaks consumers.
+- Do not invent or casually replace Unity GUIDs. Let Unity create metadata for new assets,
+  then validate generated files.
+- Before editing scenes, prefabs, materials, animation assets, or serialized YAML, inspect
+  references and limit changes to task scope.
+- Ask before deleting irreplaceable or authored binary/art assets, including materials,
+  textures, models, audio, and shader graphs, unless deletion was explicitly requested.
+- Keep Unity text serialization intact. Do not hand-edit opaque binary assets.
+- Validate `.meta` GUID format, uniqueness, and asset pairing with:
+
+```powershell
+python .cursor/skills/validate-unity-meta/scripts/validate_unity_meta.py
+```
+
+- Include both source and `.meta` in moves/deletes. Never copy a `.meta` to a second asset.

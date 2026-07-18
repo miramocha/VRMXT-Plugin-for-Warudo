@@ -1,0 +1,26 @@
+---
+description: VRMXT Plugin for Warudo project layout, assembly boundaries, and compatibility
+alwaysApply: true
+---
+
+# VRMXT Plugin for Warudo repository
+
+- Target Unity `2021.3.45f2`; do not silently raise Unity, package, API compatibility,
+  or C# language requirements.
+- Keep **Api Compatibility Level** at `.NET Framework` (`apiCompatibilityLevel: 3`).
+  Warudo Mod Tool needs Framework Reflection.Emit APIs; `.NET Standard 2.1` breaks it.
+- Keep **Assembly Version Validation** unchecked (`assemblyVersionValidation: 0`)
+  per Warudo SDK install docs.
+- Keep first-party plugin code under `Assets/` (or a local UPM package under `Packages/`
+  if one is introduced). Prefer `Runtime`, `Editor`, `Tests`, and samples folders that
+  match nearby Warudo/VRMXT conventions.
+- Select namespace and dependencies from nearby code and the nearest `.asmdef`.
+  There is no single repository root namespace.
+- Runtime assemblies must not reference Editor assemblies or `UnityEditor`.
+  Put editor-only code under an `Editor` folder and editor-only asmdef.
+- When crossing an assembly boundary, update the owning `.asmdef` deliberately.
+  Avoid adding broad or circular references.
+- Preserve Warudo plugin load behavior, serialized data, and public API compatibility.
+  Avoid unrelated cleanup in legacy files.
+- Do not edit vendored or embedded UniVRM/VRMXT package trees as if they were first-party
+  sources when an upstream or sibling repo owns them; identify the owning source first.
