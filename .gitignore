@@ -114,6 +114,9 @@ InitTestScene*.unity*
 /[Aa]ssets/ExportSettings.asset.meta
 /[Aa]ssets/ExportSettings.asset.old
 /[Aa]ssets/ExportSettings.asset.meta.old
+# Unity may create metas for the .old twins; ignore those too
+/[Aa]ssets/ExportSettings.asset.old.meta
+/[Aa]ssets/ExportSettings.asset.meta.old.meta
 
 # UMod generated caches
 /[Aa]ssets/UModData/ResourcesGenerated/

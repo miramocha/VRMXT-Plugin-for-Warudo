@@ -55,7 +55,7 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Uses **ReverseX**
 | Item | Value |
 |------|--------|
 | Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + particle shader/Resources |
-| Commit | *(uncommitted UniVRMXT working tree — pin after UniVRMXT commit)* |
+| Commit | `1bd4ae8` (+ local rename port: `VRMXT/Particles Unlit` / ModHost provider) |
 | Date | 2026-07-18 |
 
 ## Included
