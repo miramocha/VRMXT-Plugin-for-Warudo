@@ -30,7 +30,9 @@ mapper already avoids that API (`GraphicsSettings.currentRenderPipeline == null`
 uses `Object.ToString()` (not `GetType`); Warudo host prefers
 `VrmxtCharacterApply.DetectActivePipelineForWarudo` (null → Builtin, else Urp).
 Applier uses `ShaderResolveProvider` (ModHost-loaded name→Shader map) because uMod
-shaders load into memory but `Shader.Find` still returns null.
+shaders load into memory but `Shader.Find` still returns null. Sample
+`TestOverrideURP` is CG/`SRPDefaultUnlit` (no URP package includes) so the BIRP-only
+mod project can ship a pass that Warudo URP actually draws.
 
 Warudo handbook ([Plugin Mod](https://docs.warudo.app/docs/scripting/plugin-mod),
 [Plugins — Loading Unity Assets](https://docs.warudo.app/docs/scripting/api/plugins)):
@@ -40,6 +42,10 @@ assets). `VrmxtPlugin` binds the packaged particle mat and warms sample material
 shaders/mats so Applier `Shader.Find` can resolve them. Sets
 `PreferPackagedParticleMaterial` so transparent ShaderLab is used instead of host BIRP
 `Shader.Find` names that may lack alpha.
+
+Editor project uses URP (`Assets/Settings/VrmxtUniversalRP` +
+`com.unity.render-pipelines.universal` 12.1.15) so URP sample shaders can compile.
+Keep pipeline assets **outside** `Assets/Vrmxt` so they are not exported into the mod.
 
 ## Local ExportSettings (do not commit)
 
@@ -61,7 +67,7 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Uses **ReverseX**
 | Item | Value |
 |------|--------|
 | Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/VrmxtInstance` + particle/sample shaders |
-| Commit | `a6c157e` (`fix/detect-active-pipeline-no-reflection`; ShaderResolveProvider) |
+| Commit | `b5b91da` (`fix/detect-active-pipeline-no-reflection`; `(Instance)` strip + `SRPDefaultUnlit` URP sample) |
 | Date | 2026-07-19 |
 
 ## Included

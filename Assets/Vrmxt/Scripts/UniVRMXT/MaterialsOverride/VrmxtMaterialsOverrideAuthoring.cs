@@ -442,22 +442,9 @@ namespace UniVRMXT.MaterialsOverride
 
         private static bool MaterialNameMatches(string unityMaterialName, string gltfMaterialName)
         {
-            if (string.Equals(unityMaterialName, gltfMaterialName, StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            const string instanceSuffix = " (Instance)";
-            if (unityMaterialName != null &&
-                unityMaterialName.EndsWith(instanceSuffix, StringComparison.Ordinal))
-            {
-                var trimmed = unityMaterialName.Substring(
-                    0,
-                    unityMaterialName.Length - instanceSuffix.Length);
-                return string.Equals(trimmed, gltfMaterialName, StringComparison.Ordinal);
-            }
-
-            return false;
+            var unity = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(unityMaterialName);
+            var gltf = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(gltfMaterialName);
+            return string.Equals(unity, gltf, StringComparison.Ordinal);
         }
 
         private static void DestroyOwnedMaterial(Material material)

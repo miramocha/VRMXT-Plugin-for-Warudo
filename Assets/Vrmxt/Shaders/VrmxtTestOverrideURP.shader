@@ -20,84 +20,73 @@ Shader "VRMXT/Samples/TestOverrideURP"
         [Toggle(_USE_RIM_LIGHT)] _UseRimLight ("Use Rim Light", Float) = 0
     }
 
-    // URP test material for VRMXT_materials_override.
-    // Same property slots as the Built-in sample; fragment outputs sample × _Color.
+    // URP-slot test material for VRMXT_materials_override (selected via unity variant=urp).
+    // Same property slots as Built-in sample; fragment outputs sample × _Color.
+    // No URP package includes. Use SRPDefaultUnlit so Scriptable RPs draw this CG pass
+    // (UniversalForward without URP Core.hlsl pinks under Warudo URP).
     SubShader
     {
-        // Skip this SubShader when URP is not installed (e.g. Built-in-only projects).
-        // Must be first inside SubShader/Pass — Shader-root PackageRequirements is a parse error.
-        PackageRequirements
-        {
-            "com.unity.render-pipelines.universal": "12.0"
-        }
-
         Tags
         {
             "RenderType" = "Opaque"
             "Queue" = "Geometry"
-            "RenderPipeline" = "UniversalPipeline"
+            "RenderPipeline" = ""
         }
 
         Pass
         {
             Name "VRMXTTestOverrideURPUnlit"
-            Tags { "LightMode" = "UniversalForward" }
+            Tags { "LightMode" = "SRPDefaultUnlit" }
 
-            HLSLPROGRAM
+            CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
             #pragma target 2.0
             #pragma shader_feature_local _USE_RIM_LIGHT
+            #include "UnityCG.cginc"
 
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            sampler2D _MainTex;
+            float4 _MainTex_ST;
+            float4 _Color;
+            float4 _ShadeColor;
+            sampler2D _ShadeTex;
+            float4 _ShadeTex_ST;
+            float _ShadingShiftFactor;
+            sampler2D _ShadingShiftTex;
+            float4 _ShadingShiftTex_ST;
+            float _ShadingShiftTexScale;
+            float _ShadingToonyFactor;
+            float _GiEqualizationFactor;
+            float _OutlineWidth;
+            float _UseRimLight;
 
-            CBUFFER_START(UnityPerMaterial)
-                float4 _MainTex_ST;
-                float4 _Color;
-                float4 _ShadeColor;
-                float4 _ShadeTex_ST;
-                float4 _ShadingShiftTex_ST;
-                float _ShadingShiftFactor;
-                float _ShadingShiftTexScale;
-                float _ShadingToonyFactor;
-                float _GiEqualizationFactor;
-                float _OutlineWidth;
-                float _UseRimLight;
-            CBUFFER_END
-
-            TEXTURE2D(_MainTex);
-            SAMPLER(sampler_MainTex);
-            TEXTURE2D(_ShadeTex);
-            SAMPLER(sampler_ShadeTex);
-            TEXTURE2D(_ShadingShiftTex);
-            SAMPLER(sampler_ShadingShiftTex);
-
-            struct Attributes
+            struct appdata
             {
-                float4 positionOS : POSITION;
+                float4 vertex : POSITION;
                 float2 uv : TEXCOORD0;
             };
 
-            struct Varyings
+            struct v2f
             {
-                float4 positionCS : SV_POSITION;
+                float4 pos : SV_POSITION;
                 float2 uv : TEXCOORD0;
             };
 
-            Varyings vert(Attributes input)
+            v2f vert(appdata v)
             {
-                Varyings output;
-                output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
-                output.uv = TRANSFORM_TEX(input.uv, _MainTex);
-                return output;
+                v2f o;
+                o.pos = UnityObjectToClipPos(v.vertex);
+                o.uv = TRANSFORM_TEX(v.uv, _MainTex);
+                return o;
             }
 
-            half4 frag(Varyings input) : SV_Target
+            fixed4 frag(v2f i) : SV_Target
             {
+                // Keep binding targets live so Unity does not strip unused uniforms.
                 float sink = _ShadeColor.r
-                    + SAMPLE_TEXTURE2D(_ShadeTex, sampler_ShadeTex, input.uv).r
+                    + tex2D(_ShadeTex, i.uv).r
                     + _ShadingShiftFactor
-                    + SAMPLE_TEXTURE2D(_ShadingShiftTex, sampler_ShadingShiftTex, input.uv).r * _ShadingShiftTexScale
+                    + tex2D(_ShadingShiftTex, i.uv).r * _ShadingShiftTexScale
                     + _ShadingToonyFactor
                     + _GiEqualizationFactor
                     + _OutlineWidth
@@ -107,10 +96,10 @@ Shader "VRMXT/Samples/TestOverrideURP"
 #endif
                 sink *= 0.0;
 
-                half4 albedo = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uv) * (half4)_Color;
+                fixed4 albedo = tex2D(_MainTex, i.uv) * _Color;
                 return albedo + sink;
             }
-            ENDHLSL
+            ENDCG
         }
     }
 

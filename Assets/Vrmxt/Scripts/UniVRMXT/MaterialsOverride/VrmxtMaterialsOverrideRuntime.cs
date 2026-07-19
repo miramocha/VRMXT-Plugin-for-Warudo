@@ -97,6 +97,8 @@ namespace UniVRMXT.MaterialsOverride
         /// <summary>
         /// glTF material display name: <c>name</c> when present and non-empty, otherwise a
         /// stable index-based fallback (<see cref="FallbackMaterialNameFormat"/>).
+        /// Strips Unity's <c> (Instance)</c> suffix when present so store keys match live
+        /// sharedMaterials (Warudo / clone exports sometimes bake the suffix into glTF names).
         /// </summary>
         public static string GetMaterialName(JObject materialObject, int index)
         {
@@ -107,11 +109,26 @@ namespace UniVRMXT.MaterialsOverride
                 var name = nameToken.Value<string>();
                 if (!string.IsNullOrEmpty(name))
                 {
-                    return name;
+                    return StripUnityInstanceSuffix(name);
                 }
             }
 
             return string.Format(FallbackMaterialNameFormat, index);
+        }
+
+        /// <summary>
+        /// Remove a trailing Unity <c> (Instance)</c> clone suffix, if any.
+        /// </summary>
+        public static string StripUnityInstanceSuffix(string materialName)
+        {
+            const string instanceSuffix = " (Instance)";
+            if (materialName != null &&
+                materialName.EndsWith(instanceSuffix, StringComparison.Ordinal))
+            {
+                return materialName.Substring(0, materialName.Length - instanceSuffix.Length);
+            }
+
+            return materialName;
         }
 
         /// <summary>

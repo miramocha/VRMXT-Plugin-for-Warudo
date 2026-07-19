@@ -485,17 +485,8 @@ namespace UniVRMXT.MaterialsOverride
             return material != null && (material.hideFlags & HideFlags.DontSave) != 0;
         }
 
-        private static string StripInstanceSuffix(string unityMaterialName)
-        {
-            const string instanceSuffix = " (Instance)";
-            if (unityMaterialName != null &&
-                unityMaterialName.EndsWith(instanceSuffix, StringComparison.Ordinal))
-            {
-                return unityMaterialName.Substring(0, unityMaterialName.Length - instanceSuffix.Length);
-            }
-
-            return unityMaterialName;
-        }
+        private static string StripInstanceSuffix(string unityMaterialName) =>
+            VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(unityMaterialName);
     }
 
     /// <summary>

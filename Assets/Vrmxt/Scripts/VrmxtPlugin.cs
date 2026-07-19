@@ -20,7 +20,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.0.6",
+    Version = "0.0.10",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT"
 )]
@@ -118,9 +118,6 @@ public sealed class VrmxtPlugin : Plugin
         var template = _particleMaterialTemplate;
         VrmxtVfxParticleSystemMapper.PackagedMaterialProvider = () => template;
         VrmxtVfxParticleSystemMapper.PreferPackagedParticleMaterial = true;
-        Debug.Log(
-            "VRMXT: ModHost particle material bound '" + ParticleMaterialAssetPath +
-            "' shader='" + (template.shader != null ? template.shader.name : "null") + "'.");
     }
 
     /// <summary>
@@ -161,10 +158,6 @@ public sealed class VrmxtPlugin : Plugin
 
             return cache.TryGetValue(name, out var shader) ? shader : null;
         };
-
-        Debug.Log(
-            "VRMXT: materials ShaderResolveProvider bound with " + cache.Count +
-            " mod shader name(s).");
     }
 
     private void ClearMaterialsOverrideShaderResolve()
@@ -194,7 +187,6 @@ public sealed class VrmxtPlugin : Plugin
                 return null;
             }
 
-            Debug.Log("VRMXT: ModHost warmed " + label + " '" + assetPath + "'.");
             return asset;
         }
         catch (Exception e)
