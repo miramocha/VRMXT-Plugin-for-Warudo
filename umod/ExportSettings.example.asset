@@ -17,7 +17,7 @@ MonoBehaviour:
   - referencePaths: []
     modName: VRMXT
     modAuthor: Mira
-    modVersion: 0.0.5
+    modVersion: 0.0.6
     modDescription: 
     modAssetPath: REPLACE_ME/Assets/Vrmxt
     modExportPath: REPLACE_ME/Warudo_Data/StreamingAssets/Plugins

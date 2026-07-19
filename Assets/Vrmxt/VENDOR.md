@@ -29,6 +29,8 @@ mapper already avoids that API (`GraphicsSettings.currentRenderPipeline == null`
 `Shader.Find`; packaged `VRMXT/Particles Unlit`). Materials `DetectActivePipeline`
 uses `Object.ToString()` (not `GetType`); Warudo host prefers
 `VrmxtCharacterApply.DetectActivePipelineForWarudo` (null → Builtin, else Urp).
+Applier uses `ShaderResolveProvider` (ModHost-loaded name→Shader map) because uMod
+shaders load into memory but `Shader.Find` still returns null.
 
 Warudo handbook ([Plugin Mod](https://docs.warudo.app/docs/scripting/plugin-mod),
 [Plugins — Loading Unity Assets](https://docs.warudo.app/docs/scripting/api/plugins)):
@@ -59,7 +61,7 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Uses **ReverseX**
 | Item | Value |
 |------|--------|
 | Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/VrmxtInstance` + particle/sample shaders |
-| Commit | `ffc294f` (`fix/detect-active-pipeline-no-reflection`; PR #13) |
+| Commit | `a6c157e` (`fix/detect-active-pipeline-no-reflection`; ShaderResolveProvider) |
 | Date | 2026-07-19 |
 
 ## Included

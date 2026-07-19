@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
+using UniVRMXT.MaterialsOverride;
 using UniVRMXT.Vfx;
 using UnityEngine;
 using Warudo.Core;
@@ -19,7 +20,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.0.5",
+    Version = "0.0.6",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT"
 )]
@@ -48,6 +49,8 @@ public sealed class VrmxtPlugin : Plugin
         "Assets/Vrmxt/Resources/UniVRMXT/VrmxtTestOverrideURP.mat";
 
     private readonly Dictionary<Guid, BoundCharacter> _bound = new();
+    private readonly Dictionary<string, Shader> _modShaders =
+        new Dictionary<string, Shader>(StringComparer.Ordinal);
     private Material _particleMaterialTemplate;
 
     protected override void OnCreate()
@@ -55,6 +58,7 @@ public sealed class VrmxtPlugin : Plugin
         base.OnCreate();
         BindPackagedParticleMaterial();
         WarmPackagedMaterialsOverrideShaders();
+        BindMaterialsOverrideShaderResolve();
         if (Context.OpenedScene != null)
         {
             BindAllCharacters(Context.OpenedScene);
@@ -65,6 +69,7 @@ public sealed class VrmxtPlugin : Plugin
     {
         UnbindAll();
         ClearPackagedParticleMaterial();
+        ClearMaterialsOverrideShaderResolve();
         base.OnDestroy();
     }
 
@@ -80,7 +85,8 @@ public sealed class VrmxtPlugin : Plugin
         try
         {
             // Warm shader asset so the material's shader resolves inside the mod.
-            ModHost.Assets.Load<Shader>(ParticleShaderAssetPath);
+            var particleShader = ModHost.Assets.Load<Shader>(ParticleShaderAssetPath);
+            RememberModShader(particleShader);
         }
         catch (Exception e)
         {
@@ -90,6 +96,10 @@ public sealed class VrmxtPlugin : Plugin
         try
         {
             _particleMaterialTemplate = ModHost.Assets.Load<Material>(ParticleMaterialAssetPath);
+            if (_particleMaterialTemplate != null && _particleMaterialTemplate.shader != null)
+            {
+                RememberModShader(_particleMaterialTemplate.shader);
+            }
         }
         catch (Exception e)
         {
@@ -114,18 +124,66 @@ public sealed class VrmxtPlugin : Plugin
     }
 
     /// <summary>
-    /// Warm sample override shaders/mats via ModHost so Applier <c>Shader.Find</c> can
-    /// resolve <c>VRMXT/Samples/TestOverride*</c> inside the uMod player.
+    /// Warm sample override shaders/mats via ModHost. uMod shaders load into memory but
+    /// <c>Shader.Find</c> still returns null — Applier uses <see cref="BindMaterialsOverrideShaderResolve"/>.
     /// </summary>
     private void WarmPackagedMaterialsOverrideShaders()
     {
-        WarmModAsset<Shader>(MaterialsOverrideBuiltinShaderAssetPath, "materials override builtin shader");
-        WarmModAsset<Shader>(MaterialsOverrideUrpShaderAssetPath, "materials override URP shader");
-        WarmModAsset<Material>(MaterialsOverrideBuiltinMaterialAssetPath, "materials override builtin mat");
-        WarmModAsset<Material>(MaterialsOverrideUrpMaterialAssetPath, "materials override URP mat");
+        RememberModShader(
+            WarmModAsset<Shader>(MaterialsOverrideBuiltinShaderAssetPath, "materials override builtin shader"));
+        RememberModShader(
+            WarmModAsset<Shader>(MaterialsOverrideUrpShaderAssetPath, "materials override URP shader"));
+
+        var builtinMat = WarmModAsset<Material>(
+            MaterialsOverrideBuiltinMaterialAssetPath, "materials override builtin mat");
+        if (builtinMat != null)
+        {
+            RememberModShader(builtinMat.shader);
+        }
+
+        var urpMat = WarmModAsset<Material>(
+            MaterialsOverrideUrpMaterialAssetPath, "materials override URP mat");
+        if (urpMat != null)
+        {
+            RememberModShader(urpMat.shader);
+        }
     }
 
-    private void WarmModAsset<T>(string assetPath, string label) where T : UnityEngine.Object
+    private void BindMaterialsOverrideShaderResolve()
+    {
+        var cache = _modShaders;
+        VrmxtMaterialsOverrideApplier.ShaderResolveProvider = name =>
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            return cache.TryGetValue(name, out var shader) ? shader : null;
+        };
+
+        Debug.Log(
+            "VRMXT: materials ShaderResolveProvider bound with " + cache.Count +
+            " mod shader name(s).");
+    }
+
+    private void ClearMaterialsOverrideShaderResolve()
+    {
+        VrmxtMaterialsOverrideApplier.ShaderResolveProvider = null;
+        _modShaders.Clear();
+    }
+
+    private void RememberModShader(Shader shader)
+    {
+        if (shader == null || string.IsNullOrEmpty(shader.name))
+        {
+            return;
+        }
+
+        _modShaders[shader.name] = shader;
+    }
+
+    private T WarmModAsset<T>(string assetPath, string label) where T : UnityEngine.Object
     {
         try
         {
@@ -133,14 +191,16 @@ public sealed class VrmxtPlugin : Plugin
             if (asset == null)
             {
                 Debug.LogWarning("VRMXT: ModHost.Assets.Load " + label + " null at '" + assetPath + "'.");
-                return;
+                return null;
             }
 
             Debug.Log("VRMXT: ModHost warmed " + label + " '" + assetPath + "'.");
+            return asset;
         }
         catch (Exception e)
         {
             Debug.LogWarning("VRMXT: ModHost.Assets.Load " + label + " failed: " + e.Message);
+            return null;
         }
     }
 

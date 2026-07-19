@@ -18,8 +18,16 @@ namespace UniVRMXT.MaterialsOverride
     public static class VrmxtMaterialsOverrideApplier
     {
         /// <summary>
+        /// Optional host shader lookup (e.g. Warudo <c>ModHost.Assets.Load</c> cache).
+        /// Used when <c>Apply(..., resolveShader)</c> omits a per-call resolver.
+        /// uMod / restricted players often have shaders loaded but <see cref="Shader.Find"/>
+        /// returns null — same pattern as VFX <c>PackagedMaterialProvider</c>.
+        /// </summary>
+        public static Func<string, Shader> ShaderResolveProvider { get; set; }
+
+        /// <summary>
         /// Attach (if needed) and apply in one call. Prefer the
-        /// <see cref="Apply(GameObject,VrmxtMaterialsOverrideInstance,string,RenderPipelineVariant,Func{int,Texture},Func{MaterialProvider,bool})"/>
+        /// <see cref="Apply(GameObject,VrmxtMaterialsOverrideInstance,string,RenderPipelineVariant,Func{int,Texture},Func{MaterialProvider,bool},Func{string,Shader})"/>
         /// overload when a <see cref="VrmxtMaterialsOverrideInstance"/> already exists (e.g.
         /// applied later than attach, without keeping the original glTF JSON in memory).
         /// </summary>
@@ -28,10 +36,18 @@ namespace UniVRMXT.MaterialsOverride
             string gltfJson,
             RenderPipelineVariant activePipeline,
             Func<int, Texture> resolveTexture = null,
-            Func<MaterialProvider, bool> isProviderMismatch = null)
+            Func<MaterialProvider, bool> isProviderMismatch = null,
+            Func<string, Shader> resolveShader = null)
         {
             VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out var store);
-            return Apply(root, store, gltfJson, activePipeline, resolveTexture, isProviderMismatch);
+            return Apply(
+                root,
+                store,
+                gltfJson,
+                activePipeline,
+                resolveTexture,
+                isProviderMismatch,
+                resolveShader);
         }
 
         /// <summary>
@@ -46,7 +62,8 @@ namespace UniVRMXT.MaterialsOverride
             string gltfJson,
             RenderPipelineVariant activePipeline,
             Func<int, Texture> resolveTexture = null,
-            Func<MaterialProvider, bool> isProviderMismatch = null)
+            Func<MaterialProvider, bool> isProviderMismatch = null,
+            Func<string, Shader> resolveShader = null)
         {
             if (root == null || store == null)
             {
@@ -88,12 +105,12 @@ namespace UniVRMXT.MaterialsOverride
                     continue;
                 }
 
-                var shader = Shader.Find(unityOverride.ShaderName);
+                var shader = ResolveShader(unityOverride.ShaderName, resolveShader);
                 if (shader == null)
                 {
                     // Shader not present in this build — keep / restore stock import.
                     Debug.LogWarning(
-                        $"VRMXT_materials_override: Shader.Find('{unityOverride.ShaderName}') failed for " +
+                        $"VRMXT_materials_override: shader '{unityOverride.ShaderName}' unresolved for " +
                         $"material '{entry.MaterialName}'. Leaving stock material.");
                     if (entry.SourceMaterial != null)
                     {
@@ -144,6 +161,40 @@ namespace UniVRMXT.MaterialsOverride
             }
 
             return applied;
+        }
+
+        /// <summary>
+        /// Resolve a shader by name: per-call <paramref name="resolveShader"/>, else
+        /// <see cref="ShaderResolveProvider"/>, else <see cref="Shader.Find"/>.
+        /// Each step is tried only when the previous returns null.
+        /// </summary>
+        public static Shader ResolveShader(string shaderName, Func<string, Shader> resolveShader = null)
+        {
+            if (string.IsNullOrEmpty(shaderName))
+            {
+                return null;
+            }
+
+            if (resolveShader != null)
+            {
+                var fromCaller = resolveShader(shaderName);
+                if (fromCaller != null)
+                {
+                    return fromCaller;
+                }
+            }
+
+            if (ShaderResolveProvider != null &&
+                !ReferenceEquals(resolveShader, ShaderResolveProvider))
+            {
+                var fromProvider = ShaderResolveProvider(shaderName);
+                if (fromProvider != null)
+                {
+                    return fromProvider;
+                }
+            }
+
+            return Shader.Find(shaderName);
         }
 
         /// <summary>

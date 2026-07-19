@@ -188,6 +188,7 @@ public static class VrmxtCharacterApply
         }
 
         var pipeline = DetectActivePipelineForWarudo();
+        LogAvailableShadersBeforeOverride(character.Name, pipeline);
         var applied = VrmxtMaterialsOverrideApplier.Apply(
             root,
             store,
@@ -246,6 +247,71 @@ public static class VrmxtCharacterApply
         }
 
         return RenderPipelineVariant.Urp;
+    }
+
+    /// <summary>
+    /// Debug: dump loaded shaders + probe sample <c>Shader.Find</c> names before apply.
+    /// Uses <see cref="Resources.FindObjectsOfTypeAll{T}"/> (no System.Reflection).
+    /// </summary>
+    private static void LogAvailableShadersBeforeOverride(
+        string characterName,
+        RenderPipelineVariant pipeline)
+    {
+        var probes = new[]
+        {
+            "VRMXT/Samples/TestOverrideBuiltin",
+            "VRMXT/Samples/TestOverrideURP",
+            "VRMXT/Particles Unlit",
+        };
+
+        for (var i = 0; i < probes.Length; i++)
+        {
+            var name = probes[i];
+            var found = Shader.Find(name);
+            Debug.Log(
+                "VRMXT: Shader.Find('" + name + "') => " +
+                (found != null ? "OK id=" + found.GetInstanceID() : "null") +
+                " (Character '" + characterName + "' pipeline=" + pipeline + ")");
+        }
+
+        var shaders = Resources.FindObjectsOfTypeAll<Shader>();
+        var total = shaders != null ? shaders.Length : 0;
+        var vrmxtCount = 0;
+        var sb = new System.Text.StringBuilder(4096);
+        sb.Append("VRMXT: loaded shaders before materials override on '")
+            .Append(characterName)
+            .Append("' count=")
+            .Append(total)
+            .AppendLine();
+
+        if (shaders != null)
+        {
+            // Sort by name for stable logs (no LINQ OrderBy — keep deps light).
+            var names = new string[total];
+            for (var i = 0; i < total; i++)
+            {
+                names[i] = shaders[i] != null ? shaders[i].name : "<null>";
+            }
+
+            System.Array.Sort(names, System.StringComparer.Ordinal);
+
+            for (var i = 0; i < names.Length; i++)
+            {
+                var name = names[i];
+                if (name.IndexOf("VRMXT", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    vrmxtCount++;
+                    sb.Append("  [VRMXT] ").AppendLine(name);
+                }
+                else
+                {
+                    sb.Append("  ").AppendLine(name);
+                }
+            }
+        }
+
+        sb.Append("VRMXT: VRMXT-named shaders among loaded=").Append(vrmxtCount);
+        Debug.Log(sb.ToString());
     }
 
     public static void ClearExistingVfx(GameObject root)
