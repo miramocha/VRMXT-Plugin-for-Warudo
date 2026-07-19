@@ -1,7 +1,8 @@
 # VRMXT Plugin for Warudo
 
-Warudo plugin that attaches VRMXT particle VFX (`VRMXT_vfx`) and materials override
-(`VRMXT_materials_override`) onto Character assets after load.
+Warudo **consumer** plugin: attaches VRMXT particle VFX (`VRMXT_vfx`) and materials
+override (`VRMXT_materials_override`) onto Character assets after load. No authoring
+UI and no re-export from Warudo.
 
 Open the **VRMXT** plugin settings in Warudo and use **Enable VRMXT** to turn attach
 on or off (saved across scenes). Reload the scene after toggling to refresh material
