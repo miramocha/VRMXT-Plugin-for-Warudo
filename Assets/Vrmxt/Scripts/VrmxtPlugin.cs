@@ -12,13 +12,14 @@ using Warudo.Core.Utils;
 using Warudo.Plugins.Core.Assets.Character;
 
 /// <summary>
-/// VRMXT host plugin. v1 auto-attaches <c>VRMXT_vfx</c> onto Character GameObjects after load.
+/// VRMXT host plugin. Auto-attaches <c>VRMXT_vfx</c> and <c>VRMXT_materials_override</c>
+/// onto Character GameObjects after load.
 /// </summary>
 [PluginType(
     Id = "mira.vrmxt",
     Name = "VRMXT",
-    Description = "VRMXT extensions for Warudo Characters (v1: particle VFX)",
-    Version = "0.0.4",
+    Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
+    Version = "0.0.5",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT"
 )]
@@ -34,6 +35,18 @@ public sealed class VrmxtPlugin : Plugin
     public const string ParticleShaderAssetPath =
         "Assets/Vrmxt/Shaders/VrmxtParticlesUnlit.shader";
 
+    public const string MaterialsOverrideBuiltinShaderAssetPath =
+        "Assets/Vrmxt/Shaders/VrmxtTestOverrideBuiltin.shader";
+
+    public const string MaterialsOverrideUrpShaderAssetPath =
+        "Assets/Vrmxt/Shaders/VrmxtTestOverrideURP.shader";
+
+    public const string MaterialsOverrideBuiltinMaterialAssetPath =
+        "Assets/Vrmxt/Resources/UniVRMXT/VrmxtTestOverrideBuiltin.mat";
+
+    public const string MaterialsOverrideUrpMaterialAssetPath =
+        "Assets/Vrmxt/Resources/UniVRMXT/VrmxtTestOverrideURP.mat";
+
     private readonly Dictionary<Guid, BoundCharacter> _bound = new();
     private Material _particleMaterialTemplate;
 
@@ -41,6 +54,7 @@ public sealed class VrmxtPlugin : Plugin
     {
         base.OnCreate();
         BindPackagedParticleMaterial();
+        WarmPackagedMaterialsOverrideShaders();
         if (Context.OpenedScene != null)
         {
             BindAllCharacters(Context.OpenedScene);
@@ -97,6 +111,37 @@ public sealed class VrmxtPlugin : Plugin
         Debug.Log(
             "VRMXT: ModHost particle material bound '" + ParticleMaterialAssetPath +
             "' shader='" + (template.shader != null ? template.shader.name : "null") + "'.");
+    }
+
+    /// <summary>
+    /// Warm sample override shaders/mats via ModHost so Applier <c>Shader.Find</c> can
+    /// resolve <c>VRMXT/Samples/TestOverride*</c> inside the uMod player.
+    /// </summary>
+    private void WarmPackagedMaterialsOverrideShaders()
+    {
+        WarmModAsset<Shader>(MaterialsOverrideBuiltinShaderAssetPath, "materials override builtin shader");
+        WarmModAsset<Shader>(MaterialsOverrideUrpShaderAssetPath, "materials override URP shader");
+        WarmModAsset<Material>(MaterialsOverrideBuiltinMaterialAssetPath, "materials override builtin mat");
+        WarmModAsset<Material>(MaterialsOverrideUrpMaterialAssetPath, "materials override URP mat");
+    }
+
+    private void WarmModAsset<T>(string assetPath, string label) where T : UnityEngine.Object
+    {
+        try
+        {
+            var asset = ModHost.Assets.Load<T>(assetPath);
+            if (asset == null)
+            {
+                Debug.LogWarning("VRMXT: ModHost.Assets.Load " + label + " null at '" + assetPath + "'.");
+                return;
+            }
+
+            Debug.Log("VRMXT: ModHost warmed " + label + " '" + assetPath + "'.");
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("VRMXT: ModHost.Assets.Load " + label + " failed: " + e.Message);
+        }
     }
 
     private static void ClearPackagedParticleMaterial()
