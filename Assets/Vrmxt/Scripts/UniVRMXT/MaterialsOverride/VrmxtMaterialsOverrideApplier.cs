@@ -125,7 +125,7 @@ namespace UniVRMXT.MaterialsOverride
 
                 WarnOnProviderMismatch(entry.MaterialName, unityOverride.Provider, isProviderMismatch);
 
-                var hasMtoon = TryFindSiblingMtoon(gltfRoot, entry.MaterialName, out var mtoon);
+                var hasMtoon = TryFindSiblingMtoonForPair(gltfRoot, entry, out var mtoon);
 
                 // Drop stale DontSave authoring previews so we apply onto stock import mats.
                 if (entry.SourceMaterial != null)
@@ -527,9 +527,24 @@ namespace UniVRMXT.MaterialsOverride
             }
         }
 
-        private static bool TryFindSiblingMtoon(JObject gltfRoot, string materialName, out JObject mtoon)
+        /// <summary>
+        /// Resolve sibling <c>VRMC_materials_mtoon</c> for a store pair. Prefers
+        /// <see cref="VrmxtMaterialsOverridePair.GltfMaterialIndex"/> when set; otherwise
+        /// matches by material name (with <c> (Instance)</c> strip and <c>Name#N</c>
+        /// occurrence among override-bearing slots). Continues past same-name slots that
+        /// lack MToon when resolving a plain (non-disambiguated) key.
+        /// </summary>
+        public static bool TryFindSiblingMtoonForPair(
+            JObject gltfRoot,
+            VrmxtMaterialsOverridePair pair,
+            out JObject mtoon)
         {
             mtoon = null;
+            if (pair == null)
+            {
+                return false;
+            }
+
             if (gltfRoot == null ||
                 !gltfRoot.TryGetValue("materials", StringComparison.Ordinal, out var materialsToken) ||
                 materialsToken is not JArray materials)
@@ -537,6 +552,59 @@ namespace UniVRMXT.MaterialsOverride
                 return false;
             }
 
+            if (pair.GltfMaterialIndex >= 0 && pair.GltfMaterialIndex < materials.Count)
+            {
+                return TryGetMtoonExtension(materials[pair.GltfMaterialIndex] as JObject, out mtoon);
+            }
+
+            return TryFindSiblingMtoon(gltfRoot, pair.MaterialName, out mtoon);
+        }
+
+        /// <summary>
+        /// Texture index for a MToon binding source (e.g. <c>shadeMultiplyTexture</c>), if set.
+        /// </summary>
+        public static bool TryGetMtoonBindingTextureIndex(
+            string bindingSource,
+            JObject mtoon,
+            out int textureIndex)
+        {
+            textureIndex = 0;
+            if (!TryResolveMtoonSource(
+                    bindingSource,
+                    mtoon,
+                    out _,
+                    out _,
+                    out var index,
+                    out var category) ||
+                category != MtoonSourceCategory.Texture ||
+                !index.HasValue)
+            {
+                return false;
+            }
+
+            textureIndex = index.Value;
+            return true;
+        }
+
+        private static bool TryFindSiblingMtoon(JObject gltfRoot, string materialName, out JObject mtoon)
+        {
+            mtoon = null;
+            if (gltfRoot == null ||
+                string.IsNullOrEmpty(materialName) ||
+                !gltfRoot.TryGetValue("materials", StringComparison.Ordinal, out var materialsToken) ||
+                materialsToken is not JArray materials)
+            {
+                return false;
+            }
+
+            var isDisambiguated = VrmxtMaterialsOverrideRuntime.TryGetDisambiguatedStoreKey(
+                materialName, out var baseName, out var occurrence);
+            if (!isDisambiguated)
+            {
+                baseName = materialName;
+            }
+
+            var overrideOccurrence = 0;
             for (var i = 0; i < materials.Count; i++)
             {
                 if (materials[i] is not JObject materialObject)
@@ -545,24 +613,66 @@ namespace UniVRMXT.MaterialsOverride
                 }
 
                 var name = VrmxtMaterialsOverrideRuntime.GetMaterialName(materialObject, i);
-                if (!string.Equals(name, materialName, StringComparison.Ordinal))
+                if (!MaterialNameMatches(name, baseName))
                 {
                     continue;
                 }
 
-                if (materialObject.TryGetValue("extensions", StringComparison.Ordinal, out var extensionsToken) &&
-                    extensionsToken is JObject extensions &&
-                    extensions.TryGetValue("VRMC_materials_mtoon", StringComparison.Ordinal, out var mtoonToken) &&
-                    mtoonToken is JObject mtoonObject)
+                if (isDisambiguated)
                 {
-                    mtoon = mtoonObject;
-                    return true;
+                    if (!HasVrmxtMaterialsOverrideExtension(materialObject))
+                    {
+                        continue;
+                    }
+
+                    overrideOccurrence++;
+                    if (overrideOccurrence != occurrence)
+                    {
+                        continue;
+                    }
+
+                    return TryGetMtoonExtension(materialObject, out mtoon);
                 }
 
-                return false;
+                // Plain key: first same-name slot that actually has MToon (skip empties).
+                if (TryGetMtoonExtension(materialObject, out mtoon))
+                {
+                    return true;
+                }
             }
 
             return false;
+        }
+
+        private static bool HasVrmxtMaterialsOverrideExtension(JObject materialObject)
+        {
+            if (materialObject == null ||
+                !materialObject.TryGetValue("extensions", StringComparison.Ordinal, out var extensionsToken) ||
+                extensionsToken is not JObject extensions ||
+                !extensions.TryGetValue(
+                    "VRMXT_materials_override", StringComparison.Ordinal, out var overrideToken) ||
+                overrideToken is not JObject)
+            {
+                return false;
+            }
+
+            return VrmxtMaterialsOverride.TryParse(overrideToken, out _);
+        }
+
+        private static bool TryGetMtoonExtension(JObject materialObject, out JObject mtoon)
+        {
+            mtoon = null;
+            if (materialObject == null ||
+                !materialObject.TryGetValue("extensions", StringComparison.Ordinal, out var extensionsToken) ||
+                extensionsToken is not JObject extensions ||
+                !extensions.TryGetValue("VRMC_materials_mtoon", StringComparison.Ordinal, out var mtoonToken) ||
+                mtoonToken is not JObject mtoonObject)
+            {
+                return false;
+            }
+
+            mtoon = mtoonObject;
+            return true;
         }
 
         private static JObject TryParseGltfRoot(string gltfJson)

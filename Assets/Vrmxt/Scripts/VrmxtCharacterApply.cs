@@ -181,7 +181,7 @@ public static class VrmxtCharacterApply
         {
             // Decode into Instance first. Apply must resolve from Instance after
             // ReleaseOwnership — never Apply via GlbTextures then Dispose those refs.
-            store.RememberTexturesFromPairs(glbTextures.AsResolver());
+            store.RememberTexturesFromPairs(glbTextures.AsResolver(), gltfJson);
             glbTextures.ReleaseOwnership();
             resolveTexture = index =>
                 store.TryGetImportedTexture(index, out var texture) ? texture : null;

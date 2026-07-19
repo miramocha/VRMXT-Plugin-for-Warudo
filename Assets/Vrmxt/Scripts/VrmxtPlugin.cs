@@ -20,12 +20,26 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.0.10",
+    Version = "0.0.12",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT"
 )]
 public sealed class VrmxtPlugin : Plugin
 {
+    /// <summary>
+    /// When off, VRMXT does not attach VFX / materials override on Characters.
+    /// Turning off clears attached VFX immediately; reload the scene to restore
+    /// stock materials (overrides mutate host materials in place).
+    /// </summary>
+    [DataInput]
+    [Label("Enable VRMXT")]
+    public bool EnableVrmxt = true;
+
+    [Markdown]
+    public string EnableVrmxtHint =
+        "Reload the scene after toggling to see material override changes. " +
+        "VFX clears immediately when disabled.";
+
     /// <summary>
     /// Mod-folder paths (Warudo handbook: load via <see cref="Plugin.ModHost"/>, not
     /// <c>Resources.Load</c> — Unity Resources cannot see uMod assets).
@@ -59,10 +73,26 @@ public sealed class VrmxtPlugin : Plugin
         BindPackagedParticleMaterial();
         WarmPackagedMaterialsOverrideShaders();
         BindMaterialsOverrideShaderResolve();
-        if (Context.OpenedScene != null)
+        Watch<bool>(nameof(EnableVrmxt), OnEnableVrmxtChanged);
+        if (EnableVrmxt && Context.OpenedScene != null)
         {
             BindAllCharacters(Context.OpenedScene);
         }
+    }
+
+    private void OnEnableVrmxtChanged(bool from, bool to)
+    {
+        if (to)
+        {
+            if (Context.OpenedScene != null)
+            {
+                BindAllCharacters(Context.OpenedScene);
+            }
+
+            return;
+        }
+
+        UnbindAll();
     }
 
     protected override void OnDestroy()
@@ -206,6 +236,11 @@ public sealed class VrmxtPlugin : Plugin
     {
         base.OnSceneLoaded(scene, serializedScene);
         UnbindAll();
+        if (!EnableVrmxt)
+        {
+            return;
+        }
+
         BindAllCharacters(scene);
     }
 
@@ -218,6 +253,16 @@ public sealed class VrmxtPlugin : Plugin
     public override void OnUpdate()
     {
         base.OnUpdate();
+        if (!EnableVrmxt)
+        {
+            if (_bound.Count > 0)
+            {
+                UnbindAll();
+            }
+
+            return;
+        }
+
         ReconcileCharacters();
         PollActiveStateChanges();
     }
@@ -312,7 +357,7 @@ public sealed class VrmxtPlugin : Plugin
 
     private void BindCharacter(CharacterAsset character)
     {
-        if (character == null || _bound.ContainsKey(character.Id))
+        if (!EnableVrmxt || character == null || _bound.ContainsKey(character.Id))
         {
             return;
         }

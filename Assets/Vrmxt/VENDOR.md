@@ -67,7 +67,7 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Uses **ReverseX**
 | Item | Value |
 |------|--------|
 | Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/VrmxtInstance` + particle/sample shaders |
-| Commit | `b5b91da` (`fix/detect-active-pipeline-no-reflection`; `(Instance)` strip + `SRPDefaultUnlit` URP sample) |
+| Commit | `2081d73` (`fix/detect-active-pipeline-no-reflection`; Bugbot mtoon/texture/`(Instance)` fixes) |
 | Date | 2026-07-19 |
 
 ## Included
