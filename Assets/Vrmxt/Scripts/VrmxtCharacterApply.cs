@@ -1,13 +1,16 @@
 using System;
 using UniVRMXT.Format;
+using UniVRMXT.MaterialsOverride;
 using UniVRMXT.Vfx;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Warudo.Core.Utils;
 using Warudo.Plugins.Core.Assets.Character;
 using Object = UnityEngine.Object;
 
 /// <summary>
-/// Post-load VRMXT applies on a Character GameObject. v1: <c>VRMXT_vfx</c> only.
+/// Post-load VRMXT applies on a Character GameObject: <c>VRMXT_vfx</c> and
+/// <c>VRMXT_materials_override</c>.
 /// </summary>
 public static class VrmxtCharacterApply
 {
@@ -15,6 +18,7 @@ public static class VrmxtCharacterApply
     {
         public VrmxtVfxInstance VfxInstance;
         public VrmxtVfxGlbTextures VfxTextures;
+        public VrmxtMaterialsOverrideInstance MaterialsOverride;
 
         public void Dispose()
         {
@@ -29,6 +33,12 @@ public static class VrmxtCharacterApply
             {
                 VfxTextures.Dispose();
                 VfxTextures = null;
+            }
+
+            if (MaterialsOverride != null)
+            {
+                ClearExistingMaterialsOverride(MaterialsOverride.gameObject);
+                MaterialsOverride = null;
             }
         }
     }
@@ -60,12 +70,36 @@ public static class VrmxtCharacterApply
         }
 
         ClearExistingVfx(root);
+        ClearExistingMaterialsOverride(root);
 
+        var result = new Result();
+        var attachedAny = false;
+
+        // VFX first while GlbTextures cache is live; materials then Remember + ReleaseOwnership
+        // so Dispose does not Destroy textures still on particle mats / Instance.
+        attachedAny |= TryApplyVfx(character, root, glbBytes, result);
+        attachedAny |= TryApplyMaterialsOverride(character, root, glbBytes, result);
+
+        if (!attachedAny)
+        {
+            result.Dispose();
+            return null;
+        }
+
+        return result;
+    }
+
+    private static bool TryApplyVfx(
+        CharacterAsset character,
+        GameObject root,
+        byte[] glbBytes,
+        Result result)
+    {
         var resolveNode = CreateNodeResolver(root, glbBytes);
         if (resolveNode == null)
         {
             Debug.Log("VRMXT: could not resolve glTF nodes for Character '" + character.Name + "'.");
-            return null;
+            return false;
         }
 
         if (!VrmxtVfxRuntime.TryAttachFromGlb(
@@ -78,7 +112,7 @@ public static class VrmxtCharacterApply
             Debug.Log(
                 "VRMXT: no VRMXT_vfx attach on Character '" + character.Name +
                 "' (missing extension, parse fail, or all emitters skipped).");
-            return null;
+            return false;
         }
 
         if (instance.Emitters == null || instance.Emitters.Count == 0)
@@ -88,11 +122,17 @@ public static class VrmxtCharacterApply
                 "' (node name mismatch vs scene hierarchy?). Root='" + root.name + "'.");
             Object.Destroy(instance);
             textures?.Dispose();
-            return null;
+            return false;
+        }
+
+        string gltfJson = textures != null ? textures.Json : null;
+        if (string.IsNullOrEmpty(gltfJson))
+        {
+            GlbChunks.TryExtractJson(glbBytes, out gltfJson);
         }
 
         // Warudo normalize zeros bone locals; restore glTF rest frame so +Y emit matches UniVRM/Blender.
-        if (GlbChunks.TryExtractJson(glbBytes, out var gltfJson))
+        if (!string.IsNullOrEmpty(gltfJson))
         {
             VrmxtWarudoBoneAxisCorrection.Apply(instance, gltfJson);
         }
@@ -102,11 +142,110 @@ public static class VrmxtCharacterApply
             "VRMXT: attached VFX on Character '" + character.Name + "' root='" + root.name +
             "' emitters=" + instance.Emitters.Count + " particles=" + particleCount + ".");
 
-        return new Result
+        result.VfxInstance = instance;
+        result.VfxTextures = textures;
+        return true;
+    }
+
+    private static bool TryApplyMaterialsOverride(
+        CharacterAsset character,
+        GameObject root,
+        byte[] glbBytes,
+        Result result)
+    {
+        string gltfJson = result.VfxTextures != null ? result.VfxTextures.Json : null;
+        if (string.IsNullOrEmpty(gltfJson) && !GlbChunks.TryExtractJson(glbBytes, out gltfJson))
         {
-            VfxInstance = instance,
-            VfxTextures = textures,
-        };
+            return false;
+        }
+
+        if (!VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out var store) ||
+            store == null)
+        {
+            return false;
+        }
+
+        // Always clear before pairing with this file's JSON (stale indices → wrong tex).
+        store.ClearImportedTextures();
+
+        VrmxtVfxGlbTextures ownedTextures = null;
+        var glbTextures = result.VfxTextures;
+        if (glbTextures == null && VrmxtVfxGlbTextures.TryCreate(glbBytes, out ownedTextures))
+        {
+            glbTextures = ownedTextures;
+            result.VfxTextures = ownedTextures;
+        }
+
+        Func<int, Texture> resolveTexture = null;
+        if (glbTextures != null)
+        {
+            // Decode into Instance first. Apply must resolve from Instance after
+            // ReleaseOwnership — never Apply via GlbTextures then Dispose those refs.
+            store.RememberTexturesFromPairs(glbTextures.AsResolver(), gltfJson);
+            glbTextures.ReleaseOwnership();
+            resolveTexture = index =>
+                store.TryGetImportedTexture(index, out var texture) ? texture : null;
+        }
+
+        var pipeline = DetectActivePipelineForWarudo();
+        var applied = VrmxtMaterialsOverrideApplier.Apply(
+            root,
+            store,
+            gltfJson,
+            pipeline,
+            resolveTexture);
+
+        var hasOverrideJson = false;
+        if (store.Pairs != null)
+        {
+            for (var i = 0; i < store.Pairs.Count; i++)
+            {
+                if (!string.IsNullOrEmpty(store.Pairs[i]?.ExtensionJson))
+                {
+                    hasOverrideJson = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasOverrideJson && applied == 0)
+        {
+            // Stock VRM: drop empty authoring shell so Character stays clean.
+            ClearExistingMaterialsOverride(root);
+            return false;
+        }
+
+        result.MaterialsOverride = store;
+
+        if (applied > 0)
+        {
+            Debug.Log(
+                "VRMXT: materials override on Character '" + character.Name +
+                "' root='" + root.name + "' applied=" + applied +
+                " pipeline=" + pipeline + ".");
+        }
+        else
+        {
+            Debug.Log(
+                "VRMXT: materials override attached on '" + character.Name +
+                "' but 0 unity slots applied (missing variant/shader or stock-only).");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Warudo-safe RP detect: no Reflection. Null pipeline asset → Builtin; else Urp
+    /// (Warudo Pro). HDRP not used by Warudo hosts.
+    /// </summary>
+    public static RenderPipelineVariant DetectActivePipelineForWarudo()
+    {
+        if (GraphicsSettings.currentRenderPipeline == null)
+        {
+            return RenderPipelineVariant.Builtin;
+        }
+
+        return RenderPipelineVariant.Urp;
     }
 
     public static void ClearExistingVfx(GameObject root)
@@ -123,6 +262,46 @@ public static class VrmxtCharacterApply
         }
 
         existing.ClearParticleSystems();
+        Object.Destroy(existing);
+    }
+
+    public static void ClearExistingMaterialsOverride(GameObject root)
+    {
+        if (root == null)
+        {
+            return;
+        }
+
+        var existing = root.GetComponent<VrmxtMaterialsOverrideInstance>();
+        if (existing == null)
+        {
+            return;
+        }
+
+        // Destroy decoded override textures we remembered onto the Instance.
+        var imported = existing.ImportedTextures;
+        if (imported != null)
+        {
+            for (var i = 0; i < imported.Count; i++)
+            {
+                var texture = imported[i] != null ? imported[i].Texture : null;
+                if (texture == null)
+                {
+                    continue;
+                }
+
+                if (Application.isPlaying)
+                {
+                    Object.Destroy(texture);
+                }
+                else
+                {
+                    Object.DestroyImmediate(texture);
+                }
+            }
+        }
+
+        existing.ClearImportedTextures();
         Object.Destroy(existing);
     }
 
@@ -145,16 +324,7 @@ public static class VrmxtCharacterApply
             var viaGameObject = AsGameObject(d.GameObject, "GameObject");
             var viaRoot = AsGameObjectFromTransform(d.RootTransform, "RootTransform");
             var viaMain = AsGameObjectFromTransform(d.MainTransform, "MainTransform");
-            var viaParent = AsGameObjectFromTransform(d.ParentTransform, "ParentTransform");
             var viaAnimator = AsGameObjectFromAnimator(d.Animator, "Animator");
-
-            Debug.Log(
-                "VRMXT: Character '" + character.Name + "' transforms — " +
-                "GameObject=" + Describe(viaGameObject) +
-                ", RootTransform=" + Describe(viaRoot) +
-                ", MainTransform=" + Describe(viaMain) +
-                ", ParentTransform=" + Describe(viaParent) +
-                ", Animator=" + Describe(viaAnimator));
 
             if (viaGameObject != null)
             {
@@ -225,16 +395,6 @@ public static class VrmxtCharacterApply
         }
     }
 
-    private static string Describe(GameObject go)
-    {
-        if (go == null)
-        {
-            return "null";
-        }
-
-        return "'" + go.name + "' active=" + go.activeInHierarchy;
-    }
-
     private static GameObject TryFindCharacterRootByName(string name)
     {
         if (string.IsNullOrEmpty(name))
@@ -285,6 +445,11 @@ public static class VrmxtCharacterApply
         if (go.GetComponent<VrmxtVfxInstance>() != null)
         {
             score += 3;
+        }
+
+        if (go.GetComponent<VrmxtMaterialsOverrideInstance>() != null)
+        {
+            score += 2;
         }
 
         if (go.transform.parent == null)

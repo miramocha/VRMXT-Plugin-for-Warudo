@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
+using UniVRMXT.MaterialsOverride;
 using UniVRMXT.Vfx;
 using UnityEngine;
 using Warudo.Core;
@@ -12,18 +13,33 @@ using Warudo.Core.Utils;
 using Warudo.Plugins.Core.Assets.Character;
 
 /// <summary>
-/// VRMXT host plugin. v1 auto-attaches <c>VRMXT_vfx</c> onto Character GameObjects after load.
+/// VRMXT host plugin. Auto-attaches <c>VRMXT_vfx</c> and <c>VRMXT_materials_override</c>
+/// onto Character GameObjects after load.
 /// </summary>
 [PluginType(
     Id = "mira.vrmxt",
     Name = "VRMXT",
-    Description = "VRMXT extensions for Warudo Characters (v1: particle VFX)",
-    Version = "0.0.4",
+    Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
+    Version = "0.1.1",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT"
 )]
 public sealed class VrmxtPlugin : Plugin
 {
+    /// <summary>
+    /// When off, VRMXT does not attach VFX / materials override on Characters.
+    /// Turning off clears attached VFX immediately; reload the scene to restore
+    /// stock materials (overrides mutate host materials in place).
+    /// </summary>
+    [DataInput]
+    [Label("Enable VRMXT")]
+    public bool EnableVrmxt = true;
+
+    [Markdown]
+    public string EnableVrmxtHint =
+        "Reload the scene after toggling to see material override changes. " +
+        "VFX clears immediately when disabled.";
+
     /// <summary>
     /// Mod-folder paths (Warudo handbook: load via <see cref="Plugin.ModHost"/>, not
     /// <c>Resources.Load</c> — Unity Resources cannot see uMod assets).
@@ -34,23 +50,56 @@ public sealed class VrmxtPlugin : Plugin
     public const string ParticleShaderAssetPath =
         "Assets/Vrmxt/Shaders/VrmxtParticlesUnlit.shader";
 
+    public const string MaterialsOverrideBuiltinShaderAssetPath =
+        "Assets/Vrmxt/Shaders/VrmxtTestOverrideBuiltin.shader";
+
+    public const string MaterialsOverrideUrpShaderAssetPath =
+        "Assets/Vrmxt/Shaders/VrmxtTestOverrideURP.shader";
+
+    public const string MaterialsOverrideBuiltinMaterialAssetPath =
+        "Assets/Vrmxt/Resources/UniVRMXT/VrmxtTestOverrideBuiltin.mat";
+
+    public const string MaterialsOverrideUrpMaterialAssetPath =
+        "Assets/Vrmxt/Resources/UniVRMXT/VrmxtTestOverrideURP.mat";
+
     private readonly Dictionary<Guid, BoundCharacter> _bound = new();
+    private readonly Dictionary<string, Shader> _modShaders =
+        new Dictionary<string, Shader>(StringComparer.Ordinal);
     private Material _particleMaterialTemplate;
 
     protected override void OnCreate()
     {
         base.OnCreate();
         BindPackagedParticleMaterial();
-        if (Context.OpenedScene != null)
+        WarmPackagedMaterialsOverrideShaders();
+        BindMaterialsOverrideShaderResolve();
+        Watch<bool>(nameof(EnableVrmxt), OnEnableVrmxtChanged);
+        if (EnableVrmxt && Context.OpenedScene != null)
         {
             BindAllCharacters(Context.OpenedScene);
         }
+    }
+
+    private void OnEnableVrmxtChanged(bool from, bool to)
+    {
+        if (to)
+        {
+            if (Context.OpenedScene != null)
+            {
+                BindAllCharacters(Context.OpenedScene);
+            }
+
+            return;
+        }
+
+        UnbindAll();
     }
 
     protected override void OnDestroy()
     {
         UnbindAll();
         ClearPackagedParticleMaterial();
+        ClearMaterialsOverrideShaderResolve();
         base.OnDestroy();
     }
 
@@ -66,7 +115,8 @@ public sealed class VrmxtPlugin : Plugin
         try
         {
             // Warm shader asset so the material's shader resolves inside the mod.
-            ModHost.Assets.Load<Shader>(ParticleShaderAssetPath);
+            var particleShader = ModHost.Assets.Load<Shader>(ParticleShaderAssetPath);
+            RememberModShader(particleShader);
         }
         catch (Exception e)
         {
@@ -76,6 +126,10 @@ public sealed class VrmxtPlugin : Plugin
         try
         {
             _particleMaterialTemplate = ModHost.Assets.Load<Material>(ParticleMaterialAssetPath);
+            if (_particleMaterialTemplate != null && _particleMaterialTemplate.shader != null)
+            {
+                RememberModShader(_particleMaterialTemplate.shader);
+            }
         }
         catch (Exception e)
         {
@@ -94,9 +148,82 @@ public sealed class VrmxtPlugin : Plugin
         var template = _particleMaterialTemplate;
         VrmxtVfxParticleSystemMapper.PackagedMaterialProvider = () => template;
         VrmxtVfxParticleSystemMapper.PreferPackagedParticleMaterial = true;
-        Debug.Log(
-            "VRMXT: ModHost particle material bound '" + ParticleMaterialAssetPath +
-            "' shader='" + (template.shader != null ? template.shader.name : "null") + "'.");
+    }
+
+    /// <summary>
+    /// Warm sample override shaders/mats via ModHost. uMod shaders load into memory but
+    /// <c>Shader.Find</c> still returns null — Applier uses <see cref="BindMaterialsOverrideShaderResolve"/>.
+    /// </summary>
+    private void WarmPackagedMaterialsOverrideShaders()
+    {
+        RememberModShader(
+            WarmModAsset<Shader>(MaterialsOverrideBuiltinShaderAssetPath, "materials override builtin shader"));
+        RememberModShader(
+            WarmModAsset<Shader>(MaterialsOverrideUrpShaderAssetPath, "materials override URP shader"));
+
+        var builtinMat = WarmModAsset<Material>(
+            MaterialsOverrideBuiltinMaterialAssetPath, "materials override builtin mat");
+        if (builtinMat != null)
+        {
+            RememberModShader(builtinMat.shader);
+        }
+
+        var urpMat = WarmModAsset<Material>(
+            MaterialsOverrideUrpMaterialAssetPath, "materials override URP mat");
+        if (urpMat != null)
+        {
+            RememberModShader(urpMat.shader);
+        }
+    }
+
+    private void BindMaterialsOverrideShaderResolve()
+    {
+        var cache = _modShaders;
+        VrmxtMaterialsOverrideApplier.ShaderResolveProvider = name =>
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+
+            return cache.TryGetValue(name, out var shader) ? shader : null;
+        };
+    }
+
+    private void ClearMaterialsOverrideShaderResolve()
+    {
+        VrmxtMaterialsOverrideApplier.ShaderResolveProvider = null;
+        _modShaders.Clear();
+    }
+
+    private void RememberModShader(Shader shader)
+    {
+        if (shader == null || string.IsNullOrEmpty(shader.name))
+        {
+            return;
+        }
+
+        _modShaders[shader.name] = shader;
+    }
+
+    private T WarmModAsset<T>(string assetPath, string label) where T : UnityEngine.Object
+    {
+        try
+        {
+            var asset = ModHost.Assets.Load<T>(assetPath);
+            if (asset == null)
+            {
+                Debug.LogWarning("VRMXT: ModHost.Assets.Load " + label + " null at '" + assetPath + "'.");
+                return null;
+            }
+
+            return asset;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("VRMXT: ModHost.Assets.Load " + label + " failed: " + e.Message);
+            return null;
+        }
     }
 
     private static void ClearPackagedParticleMaterial()
@@ -109,6 +236,11 @@ public sealed class VrmxtPlugin : Plugin
     {
         base.OnSceneLoaded(scene, serializedScene);
         UnbindAll();
+        if (!EnableVrmxt)
+        {
+            return;
+        }
+
         BindAllCharacters(scene);
     }
 
@@ -121,6 +253,16 @@ public sealed class VrmxtPlugin : Plugin
     public override void OnUpdate()
     {
         base.OnUpdate();
+        if (!EnableVrmxt)
+        {
+            if (_bound.Count > 0)
+            {
+                UnbindAll();
+            }
+
+            return;
+        }
+
         ReconcileCharacters();
         PollActiveStateChanges();
     }
@@ -215,7 +357,7 @@ public sealed class VrmxtPlugin : Plugin
 
     private void BindCharacter(CharacterAsset character)
     {
-        if (character == null || _bound.ContainsKey(character.Id))
+        if (!EnableVrmxt || character == null || _bound.ContainsKey(character.Id))
         {
             return;
         }

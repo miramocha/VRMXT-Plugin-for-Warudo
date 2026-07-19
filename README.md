@@ -1,7 +1,13 @@
 # VRMXT Plugin for Warudo
 
-Warudo plugin that attaches VRMXT particle VFX (`VRMXT_vfx`) onto Character assets
-after load.
+Warudo plugin that attaches VRMXT particle VFX (`VRMXT_vfx`) and materials override
+(`VRMXT_materials_override`) onto Character assets after load.
+
+Open the **VRMXT** plugin settings in Warudo and use **Enable VRMXT** to turn attach
+on or off (saved across scenes). Reload the scene after toggling to refresh material
+overrides; VFX clears immediately when disabled.
+
+**Install (Warudo):** [Steam Workshop — VRMXT](https://steamcommunity.com/sharedfiles/filedetails/?id=3767350210)
 
 ## Requirements
 
@@ -22,7 +28,7 @@ after load.
 
 | Path | Role |
 |------|------|
-| `Assets/Vrmxt/` | First-party plugin + vendored UniVRMXT VFX subset |
+| `Assets/Vrmxt/` | First-party plugin + vendored UniVRMXT (VFX + materials override) |
 | `Assets/TestPlugin/` | UMod smoke-test mod |
 | `umod/` | ExportSettings template + backup/restore script |
 | `Assets/Vrmxt/VENDOR.md` | Vendoring / UMod constraints |
@@ -30,3 +36,11 @@ after load.
 ## Version
 
 Plugin attribute version: see `Assets/Vrmxt/Scripts/VrmxtPlugin.cs`.
+
+## Links
+
+| | |
+|--|--|
+| Steam Workshop | https://steamcommunity.com/sharedfiles/filedetails/?id=3767350210 |
+| Specs (Warudo host) | https://github.com/miramocha/Extended-VRM-Specs/blob/main/implementations/warudo-vrmxt.md |
+| UniVRMXT | https://github.com/miramocha/UniVRMXT |
