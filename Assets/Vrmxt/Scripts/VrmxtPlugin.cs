@@ -20,7 +20,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.1.3",
+    Version = "0.1.5",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT"
 )]
