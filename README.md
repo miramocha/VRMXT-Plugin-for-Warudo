@@ -31,6 +31,7 @@ overrides; VFX clears immediately when disabled.
 |------|------|
 | `Assets/Vrmxt/` | First-party plugin + vendored UniVRMXT (VFX + materials override) |
 | `Assets/TestPlugin/` | UMod smoke-test mod |
+| `Assets/SampleShaderPlugin/` | Example shader-only mod (`ModHost.Assets.Load`); override resolve still via VRMXT provider until a shared register lands |
 | `umod/` | ExportSettings template + backup/restore script |
 | `Assets/Vrmxt/VENDOR.md` | Vendoring / UMod constraints |
 

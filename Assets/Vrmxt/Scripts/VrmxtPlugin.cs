@@ -20,7 +20,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.1.1",
+    Version = "0.1.5",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT"
 )]
@@ -35,10 +35,86 @@ public sealed class VrmxtPlugin : Plugin
     [Label("Enable VRMXT")]
     public bool EnableVrmxt = true;
 
+    /// <summary>
+    /// Wait after character load before writing materials override so Warudo can
+    /// finish post-load material setup. Manual apply ignores this delay.
+    /// </summary>
+    [DataInput]
+    [Label("Materials Override Defer (seconds)")]
+    [IntegerSlider(0, 30)]
+    [Description("Seconds to wait after load before applying materials override. 0 = immediate.")]
+    public int MaterialsOverrideDeferSeconds = 2;
+
     [Markdown]
     public string EnableVrmxtHint =
         "Reload the scene after toggling to see material override changes. " +
         "VFX clears immediately when disabled.";
+
+    [Markdown]
+    [Label("Apply Status")]
+    public string ApplyStatus = "Idle.";
+
+    [Trigger]
+    [Label("Apply VRMXT Override")]
+    [Description(
+        "Re-apply VRMXT VFX and materials override on all active Characters in the open scene. " +
+        "Materials override runs immediately (no startup delay).")]
+    public void ApplyVrmxtOverrideNow()
+    {
+        if (!EnableVrmxt)
+        {
+            SetApplyStatus("Enable VRMXT first.");
+            return;
+        }
+
+        var scene = Context.OpenedScene;
+        if (scene == null)
+        {
+            SetApplyStatus("No scene is open.");
+            return;
+        }
+
+        var characters = scene.GetAssets<CharacterAsset>();
+        var started = 0;
+        for (var i = 0; i < characters.Count; i++)
+        {
+            var character = characters[i];
+            if (character == null || !character.IsNonNullAndActive())
+            {
+                continue;
+            }
+
+            if (!_bound.ContainsKey(character.Id))
+            {
+                BindCharacter(character);
+            }
+
+            if (!_bound.TryGetValue(character.Id, out var bound))
+            {
+                continue;
+            }
+
+            bound.ApplyGeneration++;
+            var generation = bound.ApplyGeneration;
+            bound.DisposeApply();
+            ApplyAsync(character.Id, character, generation, deferMaterialsOverride: false).Forget();
+            started++;
+        }
+
+        if (started == 0)
+        {
+            SetApplyStatus("No active Characters found to apply.");
+            return;
+        }
+
+        SetApplyStatus("Manual apply started for " + started + " Character(s).");
+    }
+
+    private void SetApplyStatus(string status)
+    {
+        SetDataInput(nameof(ApplyStatus), status, broadcast: true);
+        Debug.Log("VRMXT: " + status);
+    }
 
     /// <summary>
     /// Mod-folder paths (Warudo handbook: load via <see cref="Plugin.ModHost"/>, not
@@ -73,6 +149,7 @@ public sealed class VrmxtPlugin : Plugin
         BindPackagedParticleMaterial();
         WarmPackagedMaterialsOverrideShaders();
         BindMaterialsOverrideShaderResolve();
+        LogAvailableShaders("OnCreate");
         Watch<bool>(nameof(EnableVrmxt), OnEnableVrmxtChanged);
         if (EnableVrmxt && Context.OpenedScene != null)
         {
@@ -186,7 +263,23 @@ public sealed class VrmxtPlugin : Plugin
                 return null;
             }
 
-            return cache.TryGetValue(name, out var shader) ? shader : null;
+            if (cache.TryGetValue(name, out var shader) && shader != null)
+            {
+                return shader;
+            }
+
+            // Other mods (e.g. lilToon) warm via ModHost but never hit this cache.
+            // uMod Shader.Find stays null for those — scan already-loaded Shader assets.
+            shader = TryFindLoadedShader(name);
+            if (shader != null)
+            {
+                cache[name] = shader;
+                Debug.Log(
+                    "VRMXT: ShaderResolveProvider cached loaded shader '" + name +
+                    "' (Shader.Find was null; typical for cross-mod ModHost shaders).");
+            }
+
+            return shader;
         };
     }
 
@@ -204,6 +297,109 @@ public sealed class VrmxtPlugin : Plugin
         }
 
         _modShaders[shader.name] = shader;
+    }
+
+    /// <summary>
+    /// Debug dump: ModHost cache + <see cref="Shader.Find"/> probes + loaded Shader assets.
+    /// Use when materials override fails (esp. cross-mod lilToon / SampleShader).
+    /// </summary>
+    private void LogAvailableShaders(string reason)
+    {
+        var findLilToon = Shader.Find("lilToon");
+        var findLilCutout = Shader.Find("Hidden/lilToonCutout");
+        var findSample = Shader.Find("VRMXT/Samples/ExternalShaderPlugin");
+        var findTestBuiltin = Shader.Find("VRMXT/Samples/TestOverrideBuiltin");
+        var findTestUrp = Shader.Find("VRMXT/Samples/TestOverrideURP");
+
+        Debug.Log(
+            "VRMXT: shader inventory (" + reason + "): modCache=" + _modShaders.Count +
+            " Shader.Find lilToon=" + (findLilToon != null ? "ok" : "null") +
+            " Hidden/lilToonCutout=" + (findLilCutout != null ? "ok" : "null") +
+            " Samples/External=" + (findSample != null ? "ok" : "null") +
+            " Samples/TestBuiltin=" + (findTestBuiltin != null ? "ok" : "null") +
+            " Samples/TestURP=" + (findTestUrp != null ? "ok" : "null") + ".");
+
+        if (_modShaders.Count > 0)
+        {
+            var cached = new List<string>(_modShaders.Keys);
+            cached.Sort(StringComparer.Ordinal);
+            Debug.Log("VRMXT: mod shader cache: " + string.Join(", ", cached));
+        }
+
+        Shader[] loaded;
+        try
+        {
+            loaded = Resources.FindObjectsOfTypeAll<Shader>();
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("VRMXT: FindObjectsOfTypeAll<Shader> failed: " + e.Message);
+            return;
+        }
+
+        if (loaded == null || loaded.Length == 0)
+        {
+            Debug.LogWarning("VRMXT: no Shader assets loaded in memory.");
+            return;
+        }
+
+        var interesting = new List<string>();
+        for (var i = 0; i < loaded.Length; i++)
+        {
+            var shader = loaded[i];
+            if (shader == null || string.IsNullOrEmpty(shader.name))
+            {
+                continue;
+            }
+
+            var n = shader.name;
+            if (n.IndexOf("lil", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                n.IndexOf("VRMXT", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                n.IndexOf("MToon", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                n.IndexOf("Sample External", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                interesting.Add(n);
+            }
+        }
+
+        interesting.Sort(StringComparer.Ordinal);
+        Debug.Log(
+            "VRMXT: loaded shaders total=" + loaded.Length +
+            " interesting(lil|VRMXT|MToon|Sample)=" + interesting.Count +
+            (interesting.Count > 0 ? ": " + string.Join(", ", interesting) : "."));
+    }
+
+    /// <summary>
+    /// Match by shader name among assets already in memory (ModHost warm from any mod).
+    /// </summary>
+    private static Shader TryFindLoadedShader(string shaderName)
+    {
+        Shader[] loaded;
+        try
+        {
+            loaded = Resources.FindObjectsOfTypeAll<Shader>();
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (loaded == null)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < loaded.Length; i++)
+        {
+            var shader = loaded[i];
+            if (shader != null &&
+                string.Equals(shader.name, shaderName, StringComparison.Ordinal))
+            {
+                return shader;
+            }
+        }
+
+        return null;
     }
 
     private T WarmModAsset<T>(string assetPath, string label) where T : UnityEngine.Object
@@ -235,6 +431,8 @@ public sealed class VrmxtPlugin : Plugin
     public override void OnSceneLoaded(Scene scene, SerializedScene serializedScene)
     {
         base.OnSceneLoaded(scene, serializedScene);
+        // Re-dump after all mods OnCreate — lilToon may warm after VRMXT.
+        LogAvailableShaders("OnSceneLoaded");
         UnbindAll();
         if (!EnableVrmxt)
         {
@@ -413,10 +611,14 @@ public sealed class VrmxtPlugin : Plugin
             return;
         }
 
-        ApplyAsync(characterId, character, generation).Forget();
+        ApplyAsync(characterId, character, generation, deferMaterialsOverride: true).Forget();
     }
 
-    private async UniTaskVoid ApplyAsync(Guid characterId, CharacterAsset character, int generation)
+    private async UniTaskVoid ApplyAsync(
+        Guid characterId,
+        CharacterAsset character,
+        int generation,
+        bool deferMaterialsOverride)
     {
         try
         {
@@ -465,7 +667,10 @@ public sealed class VrmxtPlugin : Plugin
                     return;
                 }
 
-                applyResult = VrmxtCharacterApply.Apply(character, bytes);
+                applyResult = VrmxtCharacterApply.Apply(
+                    character,
+                    bytes,
+                    deferMaterialsOverrideApply: deferMaterialsOverride);
                 if (applyResult != null)
                 {
                     break;
@@ -488,11 +693,62 @@ public sealed class VrmxtPlugin : Plugin
                 return;
             }
 
+            if (deferMaterialsOverride && applyResult?.MaterialsOverride != null)
+            {
+                var delayMs = Mathf.Max(0, MaterialsOverrideDeferSeconds) * 1000;
+                if (delayMs > 0)
+                {
+                    var delaySeconds = delayMs / 1000f;
+                    SetApplyStatus(
+                        "Delayed materials override starting (" + delaySeconds +
+                        "s)... [" + character.Name + "]");
+
+                    await UniTask.Delay(delayMs);
+
+                    if (!_bound.TryGetValue(characterId, out bound) ||
+                        bound.Character != character ||
+                        bound.ApplyGeneration != generation)
+                    {
+                        applyResult.Dispose();
+                        return;
+                    }
+
+                    if (!character.IsNonNullAndActive())
+                    {
+                        applyResult.Dispose();
+                        return;
+                    }
+                }
+
+                SetApplyStatus("Applying materials override... [" + character.Name + "]");
+
+                var applied = VrmxtCharacterApply.ApplyMaterialsOverride(
+                    character,
+                    bytes,
+                    applyResult);
+                SetApplyStatus(
+                    "Deferred materials override done on '" + character.Name +
+                    "' (applied=" + applied + ", defer=" + MaterialsOverrideDeferSeconds + "s).");
+            }
+            else if (!deferMaterialsOverride && applyResult?.MaterialsOverride != null)
+            {
+                SetApplyStatus("Applied materials override. [" + character.Name + "]");
+            }
+
+            if (!_bound.TryGetValue(characterId, out bound) ||
+                bound.Character != character ||
+                bound.ApplyGeneration != generation)
+            {
+                applyResult?.Dispose();
+                return;
+            }
+
             bound.DisposeApply();
             bound.ApplyResult = applyResult;
         }
         catch (Exception e)
         {
+            SetApplyStatus("Failed to apply on '" + character.Name + "': " + e.Message);
             Log.UserError("VRMXT: failed to apply extensions on Character " + character.Name, e);
         }
     }

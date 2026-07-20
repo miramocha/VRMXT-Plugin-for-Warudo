@@ -67,8 +67,7 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Uses **ReverseX**
 | Item | Value |
 |------|--------|
 | Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/VrmxtInstance` + particle/sample shaders |
-| Commit | UniVRMXT `main` after PR #14 (`2081d73` materials fixes; re-vendor from that tip) |
-| Date | 2026-07-19 |
+| Date | 2026-07-20 |
 
 ## Included
 
@@ -89,4 +88,4 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Uses **ReverseX**
 - Editor hooks / AssetPostprocessor
 - Tests
 
-To refresh: copy the listed files from UniVRMXT at a known commit and update this table.
+To refresh: copy the listed files from UniVRMXT and update this table.
