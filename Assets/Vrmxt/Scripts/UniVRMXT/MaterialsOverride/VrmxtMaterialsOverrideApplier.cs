@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UniVRMXT.Format;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace UniVRMXT.MaterialsOverride
 {
@@ -12,8 +13,11 @@ namespace UniVRMXT.MaterialsOverride
     /// override per material, resolves MToon-sourced <c>bindings</c> from the sibling
     /// <c>VRMC_materials_mtoon</c> extension, and writes <c>properties</c> then
     /// <c>bindings</c> onto matching <see cref="Renderer"/> materials (bindings win on
-    /// overlap, per base-spec rule 23). Never throws on a per-material failure — that
-    /// material is left on stock import.
+    /// overlap, per base-spec rule 23). When the override shader differs from the live
+    /// material shader, texture slots on the target shader that are not listed in
+    /// <c>properties</c> or <c>bindings</c> are cleared so stock import textures (e.g.
+    /// MToon <c>_MainTex</c>) do not survive a shader swap. Never throws on a
+    /// per-material failure — that material is left on stock import.
     /// </summary>
     public static class VrmxtMaterialsOverrideApplier
     {
@@ -148,7 +152,17 @@ namespace UniVRMXT.MaterialsOverride
                     // Import / runtime: mutate materials the host already built. Scene
                     // authoring uses DontSave clones via Authoring instead — those must not
                     // be written onto imported assets (they do not serialize → pink/missing).
+                    var previousShader = material.shader;
                     material.shader = shader;
+                    if (!ReferenceEquals(previousShader, shader))
+                    {
+                        ClearUnlistedTextureProperties(
+                            material,
+                            shader,
+                            engineOverride.Properties,
+                            engineOverride.Bindings);
+                    }
+
                     ApplyProperties(material, engineOverride.Properties, resolveTexture);
                     ApplyBindings(material, engineOverride.Bindings, hasMtoon, mtoon, resolveTexture);
                     appliedToAny = true;
@@ -444,6 +458,89 @@ namespace UniVRMXT.MaterialsOverride
             {
                 material.SetTexture(target, texture);
             }
+        }
+
+        /// <summary>
+        /// After a shader swap, drop stock-import textures that the override JSON does not
+        /// mention. Authoring omits null texture slots from <c>properties</c>; without this
+        /// pass, Unity keeps same-named slots (e.g. MToon <c>_MainTex</c> → lilToon).
+        /// </summary>
+        private static void ClearUnlistedTextureProperties(
+            Material material,
+            Shader shader,
+            IReadOnlyList<VrmxtMaterialProperty> properties,
+            IReadOnlyList<VrmxtMaterialBinding> bindings)
+        {
+            if (material == null || shader == null)
+            {
+                return;
+            }
+
+            var covered = CollectCoveredTextureTargets(properties, bindings);
+            var count = shader.GetPropertyCount();
+            for (var i = 0; i < count; i++)
+            {
+                if (shader.GetPropertyType(i) != ShaderPropertyType.Texture)
+                {
+                    continue;
+                }
+
+                var name = shader.GetPropertyName(i);
+                if (string.IsNullOrEmpty(name) ||
+                    !material.HasProperty(name) ||
+                    covered.Contains(name))
+                {
+                    continue;
+                }
+
+                material.SetTexture(name, null);
+            }
+        }
+
+        private static HashSet<string> CollectCoveredTextureTargets(
+            IReadOnlyList<VrmxtMaterialProperty> properties,
+            IReadOnlyList<VrmxtMaterialBinding> bindings)
+        {
+            var covered = new HashSet<string>(StringComparer.Ordinal);
+            if (properties != null)
+            {
+                for (var i = 0; i < properties.Count; i++)
+                {
+                    var property = properties[i];
+                    if (property == null ||
+                        !string.Equals(
+                            property.Type,
+                            VrmxtMaterialsOverride.TargetTypeTexture,
+                            StringComparison.Ordinal) ||
+                        string.IsNullOrEmpty(property.Name))
+                    {
+                        continue;
+                    }
+
+                    covered.Add(property.Name);
+                }
+            }
+
+            if (bindings != null)
+            {
+                for (var i = 0; i < bindings.Count; i++)
+                {
+                    var binding = bindings[i];
+                    if (binding == null ||
+                        !string.Equals(
+                            binding.TargetType,
+                            VrmxtMaterialsOverride.TargetTypeTexture,
+                            StringComparison.Ordinal) ||
+                        string.IsNullOrEmpty(binding.Target))
+                    {
+                        continue;
+                    }
+
+                    covered.Add(binding.Target);
+                }
+            }
+
+            return covered;
         }
 
         private static void ApplyShaderFeature(Material material, string target, bool? enabled)

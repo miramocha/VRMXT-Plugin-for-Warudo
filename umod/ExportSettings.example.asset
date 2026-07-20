@@ -17,7 +17,7 @@ MonoBehaviour:
   - referencePaths: []
     modName: VRMXT
     modAuthor: Mira
-    modVersion: 0.1.1
+    modVersion: 0.1.2
     modDescription: 
     modAssetPath: REPLACE_ME/Assets/Vrmxt
     modExportPath: REPLACE_ME/Warudo_Data/StreamingAssets/Plugins
@@ -28,6 +28,14 @@ MonoBehaviour:
     modVersion: 1.0.0
     modDescription: UMod smoke test (Hello World clone)
     modAssetPath: REPLACE_ME/Assets/TestPlugin
+    modExportPath: REPLACE_ME/Warudo_Data/StreamingAssets/Plugins
+    modIcon: {fileID: 0}
+  - referencePaths: []
+    modName: VRMXTSampleShader
+    modAuthor: Mira
+    modVersion: 1.0.0
+    modDescription: Example shader-only mod (ModHost.Assets.Load)
+    modAssetPath: REPLACE_ME/Assets/SampleShaderPlugin
     modExportPath: REPLACE_ME/Warudo_Data/StreamingAssets/Plugins
     modIcon: {fileID: 0}
   logLevel: 3

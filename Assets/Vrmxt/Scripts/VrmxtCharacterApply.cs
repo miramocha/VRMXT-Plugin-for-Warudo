@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UniVRMXT.Format;
 using UniVRMXT.MaterialsOverride;
 using UniVRMXT.Vfx;
@@ -47,8 +48,14 @@ public static class VrmxtCharacterApply
     /// Apply VRMXT extensions from re-read GLB bytes onto the Character root.
     /// Returns null when nothing attached (no extension / resolve failure).
     /// Caller owns <see cref="Result"/> until dispose.
+    /// When <paramref name="deferMaterialsOverrideApply"/> is true, VFX still applies
+    /// immediately and the override store/textures are prepared, but shader/properties
+    /// are left for <see cref="ApplyMaterialsOverride"/>.
     /// </summary>
-    public static Result Apply(CharacterAsset character, byte[] glbBytes)
+    public static Result Apply(
+        CharacterAsset character,
+        byte[] glbBytes,
+        bool deferMaterialsOverrideApply = false)
     {
         if (character == null || !character.IsNonNullAndActive())
         {
@@ -78,7 +85,12 @@ public static class VrmxtCharacterApply
         // VFX first while GlbTextures cache is live; materials then Remember + ReleaseOwnership
         // so Dispose does not Destroy textures still on particle mats / Instance.
         attachedAny |= TryApplyVfx(character, root, glbBytes, result);
-        attachedAny |= TryApplyMaterialsOverride(character, root, glbBytes, result);
+        attachedAny |= TryApplyMaterialsOverride(
+            character,
+            root,
+            glbBytes,
+            result,
+            runApply: !deferMaterialsOverrideApply);
 
         if (!attachedAny)
         {
@@ -87,6 +99,29 @@ public static class VrmxtCharacterApply
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Run materials-override apply on a prepared <see cref="Result"/> (deferred host path).
+    /// Returns the number of glTF materials that received an override.
+    /// </summary>
+    public static int ApplyMaterialsOverride(
+        CharacterAsset character,
+        byte[] glbBytes,
+        Result result)
+    {
+        if (character == null || !character.IsNonNullAndActive() || result == null)
+        {
+            return 0;
+        }
+
+        var root = TryFindCharacterRoot(character);
+        if (root == null)
+        {
+            return 0;
+        }
+
+        return RunMaterialsOverrideApply(character, root, glbBytes, result);
     }
 
     private static bool TryApplyVfx(
@@ -151,7 +186,8 @@ public static class VrmxtCharacterApply
         CharacterAsset character,
         GameObject root,
         byte[] glbBytes,
-        Result result)
+        Result result,
+        bool runApply)
     {
         string gltfJson = result.VfxTextures != null ? result.VfxTextures.Json : null;
         if (string.IsNullOrEmpty(gltfJson) && !GlbChunks.TryExtractJson(glbBytes, out gltfJson))
@@ -187,6 +223,92 @@ public static class VrmxtCharacterApply
                 store.TryGetImportedTexture(index, out var texture) ? texture : null;
         }
 
+        var hasOverrideJson = HasOverrideJson(store);
+        if (!hasOverrideJson)
+        {
+            ClearExistingMaterialsOverride(root);
+            return false;
+        }
+
+        result.MaterialsOverride = store;
+
+        if (!runApply)
+        {
+            Debug.Log(
+                "VRMXT: materials override prepared (deferred apply) on Character '" +
+                character.Name + "' root='" + root.name + "'.");
+            return true;
+        }
+
+        var applied = RunMaterialsOverrideApply(
+            character,
+            root,
+            glbBytes,
+            result,
+            gltfJson,
+            store,
+            resolveTexture);
+        if (applied == 0)
+        {
+            ClearExistingMaterialsOverride(root);
+            result.MaterialsOverride = null;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static int RunMaterialsOverrideApply(
+        CharacterAsset character,
+        GameObject root,
+        byte[] glbBytes,
+        Result result)
+    {
+        var store = result.MaterialsOverride;
+        if (store == null)
+        {
+            store = root.GetComponent<VrmxtMaterialsOverrideInstance>();
+            if (store == null)
+            {
+                return 0;
+            }
+
+            result.MaterialsOverride = store;
+        }
+
+        string gltfJson = result.VfxTextures != null ? result.VfxTextures.Json : null;
+        if (string.IsNullOrEmpty(gltfJson) && !GlbChunks.TryExtractJson(glbBytes, out gltfJson))
+        {
+            return 0;
+        }
+
+        Func<int, Texture> resolveTexture = index =>
+            store.TryGetImportedTexture(index, out var texture) ? texture : null;
+
+        return RunMaterialsOverrideApply(
+            character,
+            root,
+            glbBytes,
+            result,
+            gltfJson,
+            store,
+            resolveTexture);
+    }
+
+    private static int RunMaterialsOverrideApply(
+        CharacterAsset character,
+        GameObject root,
+        byte[] glbBytes,
+        Result result,
+        string gltfJson,
+        VrmxtMaterialsOverrideInstance store,
+        Func<int, Texture> resolveTexture)
+    {
+        if (store == null || string.IsNullOrEmpty(gltfJson))
+        {
+            return 0;
+        }
+
         var pipeline = DetectActivePipelineForWarudo();
         var applied = VrmxtMaterialsOverrideApplier.Apply(
             root,
@@ -194,28 +316,6 @@ public static class VrmxtCharacterApply
             gltfJson,
             pipeline,
             resolveTexture);
-
-        var hasOverrideJson = false;
-        if (store.Pairs != null)
-        {
-            for (var i = 0; i < store.Pairs.Count; i++)
-            {
-                if (!string.IsNullOrEmpty(store.Pairs[i]?.ExtensionJson))
-                {
-                    hasOverrideJson = true;
-                    break;
-                }
-            }
-        }
-
-        if (!hasOverrideJson && applied == 0)
-        {
-            // Stock VRM: drop empty authoring shell so Character stays clean.
-            ClearExistingMaterialsOverride(root);
-            return false;
-        }
-
-        result.MaterialsOverride = store;
 
         if (applied > 0)
         {
@@ -226,12 +326,77 @@ public static class VrmxtCharacterApply
         }
         else
         {
-            Debug.Log(
+            var wanted = CollectWantedUnityShaderNames(store);
+            Debug.LogWarning(
                 "VRMXT: materials override attached on '" + character.Name +
-                "' but 0 unity slots applied (missing variant/shader or stock-only).");
+                "' but 0 unity slots applied (missing variant/shader or stock-only)." +
+                " pipeline=" + pipeline +
+                " wantedShaders=[" + string.Join(", ", wanted) + "]." +
+                " Check console for 'VRMXT: shader inventory' and lilToon warm logs.");
         }
 
-        return true;
+        return applied;
+    }
+
+    private static bool HasOverrideJson(VrmxtMaterialsOverrideInstance store)
+    {
+        if (store?.Pairs == null)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            if (!string.IsNullOrEmpty(store.Pairs[i]?.ExtensionJson))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<string> CollectWantedUnityShaderNames(VrmxtMaterialsOverrideInstance store)
+    {
+        var names = new List<string>();
+        if (store?.Pairs == null)
+        {
+            return names;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            var pair = store.Pairs[i];
+            if (pair == null || string.IsNullOrEmpty(pair.ExtensionJson))
+            {
+                continue;
+            }
+
+            if (!VrmxtMaterialsOverride.TryParse(pair.ExtensionJson, out var extension) ||
+                extension?.Overrides == null)
+            {
+                continue;
+            }
+
+            for (var j = 0; j < extension.Overrides.Count; j++)
+            {
+                var engineOverride = extension.Overrides[j];
+                var unity = engineOverride?.Material as UnityMaterialOverride;
+                if (unity == null || string.IsNullOrEmpty(unity.ShaderName))
+                {
+                    continue;
+                }
+
+                if (seen.Add(unity.ShaderName))
+                {
+                    names.Add(unity.ShaderName);
+                }
+            }
+        }
+
+        names.Sort(StringComparer.Ordinal);
+        return names;
     }
 
     /// <summary>
