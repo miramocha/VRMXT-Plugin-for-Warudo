@@ -160,7 +160,9 @@ namespace UniVRMXT.MaterialsOverride
                             material,
                             shader,
                             engineOverride.Properties,
-                            engineOverride.Bindings);
+                            engineOverride.Bindings,
+                            hasMtoon,
+                            mtoon);
                     }
 
                     ApplyProperties(material, engineOverride.Properties, resolveTexture);
@@ -469,14 +471,16 @@ namespace UniVRMXT.MaterialsOverride
             Material material,
             Shader shader,
             IReadOnlyList<VrmxtMaterialProperty> properties,
-            IReadOnlyList<VrmxtMaterialBinding> bindings)
+            IReadOnlyList<VrmxtMaterialBinding> bindings,
+            bool hasMtoon,
+            JObject mtoon)
         {
             if (material == null || shader == null)
             {
                 return;
             }
 
-            var covered = CollectCoveredTextureTargets(properties, bindings);
+            var covered = CollectCoveredTextureTargets(properties, bindings, hasMtoon, mtoon);
             var count = shader.GetPropertyCount();
             for (var i = 0; i < count; i++)
             {
@@ -497,9 +501,16 @@ namespace UniVRMXT.MaterialsOverride
             }
         }
 
+        /// <summary>
+        /// Texture slots the override JSON will write. Binding targets are covered only when
+        /// <see cref="ApplyBindings"/> would apply them (sibling MToon + resolvable texture
+        /// source); otherwise they must stay clearable after a shader swap.
+        /// </summary>
         private static HashSet<string> CollectCoveredTextureTargets(
             IReadOnlyList<VrmxtMaterialProperty> properties,
-            IReadOnlyList<VrmxtMaterialBinding> bindings)
+            IReadOnlyList<VrmxtMaterialBinding> bindings,
+            bool hasMtoon,
+            JObject mtoon)
         {
             var covered = new HashSet<string>(StringComparer.Ordinal);
             if (properties != null)
@@ -521,23 +532,39 @@ namespace UniVRMXT.MaterialsOverride
                 }
             }
 
-            if (bindings != null)
+            // Match ApplyBindings: no sibling MToon means every binding is ignored.
+            if (bindings == null || !hasMtoon || mtoon == null)
             {
-                for (var i = 0; i < bindings.Count; i++)
-                {
-                    var binding = bindings[i];
-                    if (binding == null ||
-                        !string.Equals(
-                            binding.TargetType,
-                            VrmxtMaterialsOverride.TargetTypeTexture,
-                            StringComparison.Ordinal) ||
-                        string.IsNullOrEmpty(binding.Target))
-                    {
-                        continue;
-                    }
+                return covered;
+            }
 
-                    covered.Add(binding.Target);
+            for (var i = 0; i < bindings.Count; i++)
+            {
+                var binding = bindings[i];
+                if (binding == null ||
+                    !string.Equals(
+                        binding.TargetType,
+                        VrmxtMaterialsOverride.TargetTypeTexture,
+                        StringComparison.Ordinal) ||
+                    string.IsNullOrEmpty(binding.Target))
+                {
+                    continue;
                 }
+
+                // Match ApplyBinding: unresolvable / non-texture MToon sources are ignored.
+                if (!TryResolveMtoonSource(
+                        binding.Source,
+                        mtoon,
+                        out _,
+                        out _,
+                        out _,
+                        out var category) ||
+                    category != MtoonSourceCategory.Texture)
+                {
+                    continue;
+                }
+
+                covered.Add(binding.Target);
             }
 
             return covered;
