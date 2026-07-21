@@ -17,8 +17,15 @@ UMod `referencePaths` is for other **mods**, not UnityEngine DLLs. Do not put
 
 UMod compile has `UnityEngine.dll` forwarders but not CoreModule. Reading Warudo
 API members typed as UnityEngine types (`CharacterAsset.GameObject`,
-`OnActiveStateChange` / `UnityEvent`) → CS0012. Host code must avoid those
-members (name-find GameObject; poll active). Own `using UnityEngine` types OK.
+`CharacterAsset.Materials` / `List<Material>`, `OnActiveStateChange` / `UnityEvent`)
+→ CS0012 (and fake “same type” CS1503/CS0029 across CoreModule vs UnityEngine.dll).
+Host code must avoid those members (name-find GameObject; poll active; mutate live
+renderer materials in place — do not assign into `CharacterAsset.Materials`).
+`CharacterAsset.MaterialProperties` (`Dictionary<string, List<ShaderProperty>>`) is
+safe to mutate. Do not call Warudo's `Shader.GetShaderProperties()` extension: its
+CoreModule `Shader` parameter also triggers CS0012. Build `ShaderProperty` entries
+locally from the live shader, then replace overridden catalog keys. Own
+`using UnityEngine` types OK.
 
 UMod **code security** also bans `System.Reflection` (includes `GetType().Name`).
 Build failures after "Compile successful!" → check

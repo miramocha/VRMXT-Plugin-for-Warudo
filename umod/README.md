@@ -11,16 +11,17 @@ absolute paths for your machine.
 4. Keep **Clear Console On Build** unchecked while debugging UMod compile errors
 5. Snapshot a local backup (see below)
 
-## Local `.old` backup (UMod wipe protection)
+## Local backup (UMod wipe protection)
 
 UMod may empty or delete `ExportSettings.asset` / `.meta` when scripts change and Unity
-regains focus. Keep a gitignored twin that UMod does not touch:
+regains focus. Keep backups under `umod/local/` (outside `Assets/`) so Unity does not
+import them as a second `ExportSettings` ScriptableObject:
 
 | File | Role |
 |------|------|
 | `Assets/ExportSettings.asset` | Live Mod Settings (UMod may wipe) |
-| `Assets/ExportSettings.asset.old` | Local backup (gitignored) |
-| `Assets/ExportSettings.asset.meta.old` | Optional meta backup |
+| `umod/local/ExportSettings.asset.old` | Local backup (gitignored) |
+| `umod/local/ExportSettings.asset.meta.old` | Optional meta backup |
 
 ```powershell
 # After settings look correct
@@ -34,8 +35,15 @@ regains focus. Keep a gitignored twin that UMod does not touch:
 
 Or ask the agent to restore from `.old`.
 
+## Plugin version bumps
+
+When incrementing the plugin version, keep these equal: plugin `Version` attribute,
+`umod/ExportSettings.example.asset` `modVersion`, live `Assets/ExportSettings.asset`,
+and backup `umod/local/ExportSettings.asset.old` (so `-Restore` does not roll the
+version back). Or bump live/example/`Version`, then `.\umod\export-settings.ps1 -Backup`.
+
 ## Meta file churn
 
 UMod may delete `ExportSettings.asset.meta` when you edit scripts and return focus to
 Unity. Unity recreates the meta on reimport. Safe to ignore; do not commit those files.
-Restore from `.meta.old` via the script if the GUID matters.
+Restore from `umod/local/*.meta.old` via the script if the GUID matters.

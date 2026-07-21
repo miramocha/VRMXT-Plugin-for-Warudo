@@ -6,6 +6,7 @@ using UniVRMXT.Vfx;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Warudo.Core.Utils;
+using Warudo.Plugins.Core.Assets;
 using Warudo.Plugins.Core.Assets.Character;
 using Object = UnityEngine.Object;
 
@@ -319,10 +320,13 @@ public static class VrmxtCharacterApply
 
         if (applied > 0)
         {
+            var catalogRefreshed = RefreshMaterialPropertiesCatalog(character, root, store);
             Debug.Log(
                 "VRMXT: materials override on Character '" + character.Name +
                 "' root='" + root.name + "' applied=" + applied +
+                " catalogRefreshed=" + catalogRefreshed +
                 " pipeline=" + pipeline + ".");
+            DumpMaterialsOverrideDebug(character, root, store);
         }
         else
         {
@@ -336,6 +340,472 @@ public static class VrmxtCharacterApply
         }
 
         return applied;
+    }
+
+    /// <summary>
+    /// Rebuild <see cref="CharacterAsset.MaterialProperties"/> for overridden mats from
+    /// the live shader (Warudo UI catalog). Match by material name with
+    /// <c> (Instance)</c> strip — same join as apply. UMod-safe: mutates the existing
+    /// <c>Dictionary&lt;string, List&lt;ShaderProperty&gt;&gt;</c> only; does not touch
+    /// <see cref="CharacterAsset.Materials"/>.
+    /// </summary>
+    /// <returns>Number of catalog keys rewritten.</returns>
+    public static int RefreshMaterialPropertiesCatalog(
+        CharacterAsset character,
+        GameObject root,
+        VrmxtMaterialsOverrideInstance store)
+    {
+        if (character == null || root == null || store?.Pairs == null)
+        {
+            return 0;
+        }
+
+        var catalog = character.MaterialProperties;
+        if (catalog == null)
+        {
+            return 0;
+        }
+
+        var refreshed = 0;
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            var pair = store.Pairs[i];
+            if (pair == null ||
+                string.IsNullOrEmpty(pair.MaterialName) ||
+                string.IsNullOrEmpty(pair.ExtensionJson))
+            {
+                continue;
+            }
+
+            Material live = null;
+            foreach (var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                         root,
+                         pair.MaterialName))
+            {
+                if (material != null && material.shader != null)
+                {
+                    live = material;
+                    break;
+                }
+            }
+
+            if (live == null)
+            {
+                continue;
+            }
+
+            var catalogKey = ResolveMaterialPropertiesCatalogKey(
+                catalog,
+                pair.MaterialName,
+                live.name);
+            if (string.IsNullOrEmpty(catalogKey))
+            {
+                continue;
+            }
+
+            var props = BuildMaterialPropertiesCatalog(live);
+            if (props.Count == 0)
+            {
+                continue;
+            }
+
+            catalog[catalogKey] = props;
+            refreshed++;
+        }
+
+        return refreshed;
+    }
+
+    /// <summary>
+    /// Local equivalent of Warudo's <c>ShaderPropertyExtensions.GetShaderProperties</c>.
+    /// Calling that extension crosses a Warudo API boundary typed with CoreModule
+    /// <c>Shader</c>, which UMod rejects with CS0012.
+    /// </summary>
+    private static List<ShaderProperty> BuildMaterialPropertiesCatalog(Material material)
+    {
+        var properties = new List<ShaderProperty>();
+        if (material == null || material.shader == null)
+        {
+            return properties;
+        }
+
+        var shader = material.shader;
+        var count = shader.GetPropertyCount();
+        for (var i = 0; i < count; i++)
+        {
+            if ((shader.GetPropertyFlags(i) & ShaderPropertyFlags.HideInInspector) != 0)
+            {
+                continue;
+            }
+
+            var name = shader.GetPropertyName(i);
+            if (string.IsNullOrEmpty(name))
+            {
+                continue;
+            }
+
+            if (!TryMapMaterialPropertyType(
+                    shader.GetPropertyType(i),
+                    out var propertyType))
+            {
+                continue;
+            }
+
+            properties.Add(new ShaderProperty
+            {
+                Shader = shader.name,
+                Name = name,
+                Description = shader.GetPropertyDescription(i),
+                Type = propertyType,
+                Attributes = new List<string>(shader.GetPropertyAttributes(i)),
+            });
+        }
+
+        return properties;
+    }
+
+    private static bool TryMapMaterialPropertyType(
+        ShaderPropertyType shaderType,
+        out MaterialPropertyType propertyType)
+    {
+        switch (shaderType)
+        {
+            case ShaderPropertyType.Color:
+                propertyType = MaterialPropertyType.Color;
+                return true;
+            case ShaderPropertyType.Vector:
+                propertyType = MaterialPropertyType.Vector;
+                return true;
+            case ShaderPropertyType.Float:
+            case ShaderPropertyType.Range:
+                propertyType = MaterialPropertyType.Float;
+                return true;
+            case ShaderPropertyType.Int:
+                propertyType = MaterialPropertyType.Int;
+                return true;
+            case ShaderPropertyType.Texture:
+                propertyType = MaterialPropertyType.Texture;
+                return true;
+            default:
+                propertyType = default;
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Prefer an existing <see cref="CharacterAsset.MaterialProperties"/> key that
+    /// matches the store/live name after <c> (Instance)</c> strip; otherwise insert
+    /// under the stripped live name (Warudo's usual key shape).
+    /// </summary>
+    private static string ResolveMaterialPropertiesCatalogKey(
+        Dictionary<string, List<ShaderProperty>> catalog,
+        string storeKey,
+        string liveName)
+    {
+        var storeStripped =
+            VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(storeKey);
+        var liveStripped =
+            VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(liveName);
+
+        foreach (var key in catalog.Keys)
+        {
+            if (string.IsNullOrEmpty(key))
+            {
+                continue;
+            }
+
+            var keyStripped =
+                VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(key);
+            if (string.Equals(key, storeKey, StringComparison.Ordinal) ||
+                string.Equals(key, liveName, StringComparison.Ordinal) ||
+                string.Equals(keyStripped, storeStripped, StringComparison.Ordinal) ||
+                string.Equals(keyStripped, liveStripped, StringComparison.Ordinal))
+            {
+                return key;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(liveStripped))
+        {
+            return liveStripped;
+        }
+
+        return storeStripped;
+    }
+
+    /// <summary>
+    /// UMod-safe mismatch dump after override: live renderer shaders vs Warudo
+    /// <see cref="CharacterAsset.MaterialProperties"/> catalog (string/ShaderProperty only).
+    /// Does not read <see cref="CharacterAsset.Materials"/> (CoreModule CS0012).
+    /// </summary>
+    public static void DumpMaterialsOverrideDebug(
+        CharacterAsset character,
+        GameObject root,
+        VrmxtMaterialsOverrideInstance store)
+    {
+        if (character == null || root == null)
+        {
+            return;
+        }
+
+        var sb = new System.Text.StringBuilder(2048);
+        sb.Append("VRMXT materials debug [").Append(character.Name).Append("]\n");
+
+        DumpLiveOverrideMaterials(sb, root, store);
+        DumpWarudoMaterialPropertiesCatalog(sb, character, store);
+        DumpWarudoLastMaterialProperties(sb, character);
+
+        Debug.Log(sb.ToString());
+    }
+
+    private static void DumpLiveOverrideMaterials(
+        System.Text.StringBuilder sb,
+        GameObject root,
+        VrmxtMaterialsOverrideInstance store)
+    {
+        sb.AppendLine("--- live renderers (post-apply) ---");
+        if (store?.Pairs == null)
+        {
+            sb.AppendLine("(no store pairs)");
+            return;
+        }
+
+        var any = false;
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            var pair = store.Pairs[i];
+            if (pair == null ||
+                string.IsNullOrEmpty(pair.MaterialName) ||
+                string.IsNullOrEmpty(pair.ExtensionJson))
+            {
+                continue;
+            }
+
+            any = true;
+            var found = false;
+            foreach (var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                         root,
+                         pair.MaterialName))
+            {
+                if (material == null)
+                {
+                    continue;
+                }
+
+                found = true;
+                var shaderName = material.shader != null ? material.shader.name : "(null shader)";
+                sb.Append("  store='").Append(pair.MaterialName)
+                    .Append("' live='").Append(material.name)
+                    .Append("' id=").Append(material.GetInstanceID())
+                    .Append(" shader='").Append(shaderName)
+                    .Append("' family=").Append(ClassifyShaderFamily(shaderName))
+                    .Append('\n');
+            }
+
+            if (!found)
+            {
+                sb.Append("  store='").Append(pair.MaterialName)
+                    .Append("' live=(none)\n");
+            }
+        }
+
+        if (!any)
+        {
+            sb.AppendLine("(no override JSON pairs)");
+        }
+    }
+
+    private static void DumpWarudoMaterialPropertiesCatalog(
+        System.Text.StringBuilder sb,
+        CharacterAsset character,
+        VrmxtMaterialsOverrideInstance store)
+    {
+        sb.AppendLine("--- Character.MaterialProperties (Warudo UI catalog) ---");
+        // MaterialProperties is Dictionary<string, List<ShaderProperty>> — no Unity
+        // Material type in the signature, so UMod can read it. Materials cannot.
+        var catalog = character.MaterialProperties;
+        if (catalog == null)
+        {
+            sb.AppendLine("(null)");
+            return;
+        }
+
+        sb.Append("  keys=").Append(catalog.Count).Append('\n');
+
+        var overrideKeys = new HashSet<string>(StringComparer.Ordinal);
+        if (store?.Pairs != null)
+        {
+            for (var i = 0; i < store.Pairs.Count; i++)
+            {
+                var pair = store.Pairs[i];
+                if (pair != null &&
+                    !string.IsNullOrEmpty(pair.MaterialName) &&
+                    !string.IsNullOrEmpty(pair.ExtensionJson))
+                {
+                    overrideKeys.Add(pair.MaterialName);
+                    var stripped =
+                        VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(pair.MaterialName);
+                    if (!string.IsNullOrEmpty(stripped))
+                    {
+                        overrideKeys.Add(stripped);
+                    }
+                }
+            }
+        }
+
+        foreach (var kv in catalog)
+        {
+            var key = kv.Key ?? "(null)";
+            var props = kv.Value;
+            var propCount = props != null ? props.Count : 0;
+            var catalogShader = "(empty)";
+            var sample = "";
+            if (props != null && props.Count > 0 && props[0] != null)
+            {
+                catalogShader = string.IsNullOrEmpty(props[0].Shader)
+                    ? "(blank Shader field)"
+                    : props[0].Shader;
+                var n = Math.Min(8, props.Count);
+                for (var i = 0; i < n; i++)
+                {
+                    if (i > 0)
+                    {
+                        sample += ",";
+                    }
+
+                    sample += props[i] != null ? props[i].Name : "?";
+                }
+            }
+
+            var isOverrideTarget = false;
+            foreach (var ok in overrideKeys)
+            {
+                if (string.Equals(key, ok, StringComparison.Ordinal) ||
+                    string.Equals(
+                        VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(key),
+                        VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(ok),
+                        StringComparison.Ordinal))
+                {
+                    isOverrideTarget = true;
+                    break;
+                }
+            }
+
+            if (!isOverrideTarget && overrideKeys.Count > 0)
+            {
+                continue;
+            }
+
+            sb.Append("  key='").Append(key)
+                .Append("' props=").Append(propCount)
+                .Append(" catalogShader='").Append(catalogShader)
+                .Append("' family=").Append(ClassifyShaderFamily(catalogShader))
+                .Append(" sample=[").Append(sample)
+                .Append("]\n");
+        }
+    }
+
+    private static void DumpWarudoLastMaterialProperties(
+        System.Text.StringBuilder sb,
+        CharacterAsset character)
+    {
+        sb.AppendLine("--- Character.LastMaterialProperties (runtime values) ---");
+        var last = character.LastMaterialProperties;
+        if (last == null)
+        {
+            sb.AppendLine("(null)");
+            return;
+        }
+
+        sb.Append("  mats=").Append(last.Count).Append('\n');
+        var shown = 0;
+        foreach (var kv in last)
+        {
+            if (shown >= 12)
+            {
+                sb.Append("  ... (").Append(last.Count - shown).Append(" more)\n");
+                break;
+            }
+
+            var props = kv.Value;
+            var propCount = props != null ? props.Count : 0;
+            var sample = "";
+            if (props != null)
+            {
+                var n = 0;
+                foreach (var pk in props.Keys)
+                {
+                    if (n >= 6)
+                    {
+                        break;
+                    }
+
+                    if (n > 0)
+                    {
+                        sample += ",";
+                    }
+
+                    sample += pk;
+                    n++;
+                }
+            }
+
+            sb.Append("  mat='").Append(kv.Key)
+                .Append("' values=").Append(propCount)
+                .Append(" sample=[").Append(sample)
+                .Append("] family=")
+                .Append(ClassifyPropNameSample(sample))
+                .Append('\n');
+            shown++;
+        }
+    }
+
+    private static string ClassifyShaderFamily(string shaderName)
+    {
+        if (string.IsNullOrEmpty(shaderName))
+        {
+            return "unknown";
+        }
+
+        if (shaderName.IndexOf("lilToon", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            shaderName.IndexOf("lil/", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return "lilToon";
+        }
+
+        if (shaderName.IndexOf("MToon", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            shaderName.IndexOf("VRM10/MToon", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            shaderName.IndexOf("VRM/", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return "mtoon";
+        }
+
+        return "other";
+    }
+
+    private static string ClassifyPropNameSample(string sampleCsv)
+    {
+        if (string.IsNullOrEmpty(sampleCsv))
+        {
+            return "unknown";
+        }
+
+        // MToon-ish vs lilToon-ish from common property names in the sample.
+        if (sampleCsv.IndexOf("_ShadeColor", StringComparison.Ordinal) >= 0 ||
+            sampleCsv.IndexOf("_RimFresnelPower", StringComparison.Ordinal) >= 0 ||
+            sampleCsv.IndexOf("_MToonVersion", StringComparison.Ordinal) >= 0)
+        {
+            return "mtoon-ish";
+        }
+
+        if (sampleCsv.IndexOf("_UseShadow", StringComparison.Ordinal) >= 0 ||
+            sampleCsv.IndexOf("_lilShadowCasterBias", StringComparison.Ordinal) >= 0 ||
+            sampleCsv.IndexOf("_AsUnlit", StringComparison.Ordinal) >= 0)
+        {
+            return "liltoon-ish";
+        }
+
+        return "other";
     }
 
     private static bool HasOverrideJson(VrmxtMaterialsOverrideInstance store)
