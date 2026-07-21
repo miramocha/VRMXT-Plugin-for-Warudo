@@ -11,7 +11,7 @@ using Warudo.Plugins.Core.Assets.Character;
 using Object = UnityEngine.Object;
 
 /// <summary>
-/// Post-load VRMXT applies on a Character GameObject: <c>VRMXT_vfx</c> and
+/// Post-load VRMXT applies on a Character GameObject: <c>VRMXT_sprite_particle</c> and
 /// <c>VRMXT_materials_override</c>.
 /// </summary>
 public static class VrmxtCharacterApply
@@ -146,7 +146,7 @@ public static class VrmxtCharacterApply
                 out var textures))
         {
             Debug.Log(
-                "VRMXT: no VRMXT_vfx attach on Character '" + character.Name +
+                "VRMXT: no VRMXT_sprite_particle attach on Character '" + character.Name +
                 "' (missing extension, parse fail, or all emitters skipped).");
             return false;
         }
@@ -154,7 +154,7 @@ public static class VrmxtCharacterApply
         if (instance.Emitters == null || instance.Emitters.Count == 0)
         {
             Debug.Log(
-                "VRMXT: VRMXT_vfx present but 0 emitters resolved on '" + character.Name +
+                "VRMXT: VRMXT_sprite_particle present but 0 emitters resolved on '" + character.Name +
                 "' (node name mismatch vs scene hierarchy?). Root='" + root.name + "'.");
             Object.Destroy(instance);
             textures?.Dispose();

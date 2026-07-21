@@ -62,7 +62,7 @@ namespace UniVRMXT.Vfx
 
             var texture = new Texture2D(2, 2, TextureFormat.RGBA32, mipChain: false, linear: false)
             {
-                name = "VRMXT_vfx_tex_" + textureIndex,
+                name = "VRMXT_sprite_particle_tex_" + textureIndex,
             };
 
             if (!texture.LoadImage(imageBytes, markNonReadable: true))

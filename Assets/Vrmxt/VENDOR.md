@@ -67,14 +67,16 @@ Unity does not import it) via `umod/export-settings.ps1 -Backup` / `-Restore`.
 See `umod/README.md`.
 
 Warudo humanoid normalize zeros bone local rotations. Host (not UniVRMXT) applies
-`VrmxtWarudoBoneAxisCorrection` after attach so emitter local +Y matches glTF
-node rest (UniVRM/Blender), not Warudo's identity bone frame. Uses **ReverseX**
+`VrmxtWarudoBoneAxisCorrection` after particle build so child local +Y matches glTF
+node rest (UniVRM/Blender), not Warudo's identity bone frame. Sets identity
+`localPosition` and applies model-relative rest rotation on the particle child only
+(no emitter `localPosition` / `localRotation` fields). Uses **ReverseX**
 (VRM 1.0 / `Vrm10Importer`), not ReverseZ (VRM 0).
 
 | Item | Value |
 |------|--------|
 | Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/VrmxtInstance` + particle/sample shaders |
-| Date | 2026-07-20 |
+| Date | 2026-07-21 |
 
 ## Included
 

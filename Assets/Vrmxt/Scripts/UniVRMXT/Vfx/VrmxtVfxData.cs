@@ -29,10 +29,7 @@ namespace UniVRMXT.Vfx
     public sealed class VrmxtVfxEmitterData
     {
         public string Name;
-        public string Type = "particle";
         public int Node;
-        public Vector3 LocalPosition;
-        public Quaternion LocalRotation = Quaternion.identity;
         public VrmxtVfxParticleData Particle = new();
     }
 
@@ -51,8 +48,14 @@ namespace UniVRMXT.Vfx
         public float EmissionRate = VrmxtVfx.DefaultEmissionRate;
         public int MaxParticles = VrmxtVfx.DefaultMaxParticles;
         public float Lifetime = VrmxtVfx.DefaultLifetime;
-        public float StartSize = VrmxtVfx.DefaultStartSize;
+
+        /// <summary>Sprite width (meters). World-space; does not inherit node scale.</summary>
+        public float SizeX = VrmxtVfx.DefaultSize[0];
+
+        /// <summary>Sprite height (meters). World-space; does not inherit node scale.</summary>
+        public float SizeY = VrmxtVfx.DefaultSize[1];
+
         public float StartSpeed = VrmxtVfx.DefaultStartSpeed;
-        public Color StartColor = Color.white;
+        public Color Color = UnityEngine.Color.white;
     }
 }

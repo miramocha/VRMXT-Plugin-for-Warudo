@@ -6,13 +6,13 @@ using UnityEngine.Rendering;
 namespace UniVRMXT.Vfx
 {
     /// <summary>
-    /// Maps portable <c>VRMXT_vfx</c> particle fields onto Unity <see cref="ParticleSystem"/>.
-    /// See <c>docs/vfx-particle-mapping.md</c> for the field table.
+    /// Maps portable <c>VRMXT_sprite_particle</c> fields onto Unity
+    /// <see cref="ParticleSystem"/>.
     /// </summary>
     public static class VrmxtVfxParticleSystemMapper
     {
-        public const string EmitterObjectNamePrefix = "VRMXT_vfx_";
-        public const string OwnedMaterialNamePrefix = "VRMXT_vfx_Particle";
+        public const string EmitterObjectNamePrefix = "VRMXT_sprite_particle_";
+        public const string OwnedMaterialNamePrefix = "VRMXT_sprite_particle_Particle";
 
         /// <summary>ShaderLab name of the packaged first-party particle shader.</summary>
         public const string PackagedShaderName = "VRMXT/Particles Unlit";
@@ -50,11 +50,11 @@ namespace UniVRMXT.Vfx
 
         /// <summary>
         /// Create a child under <see cref="VrmxtVfxResolvedEmitter.NodeTransform"/> with
-        /// emitter local TR, then configure a <see cref="ParticleSystem"/>.
+        /// identity local transform, then configure a <see cref="ParticleSystem"/>.
         /// </summary>
         /// <param name="texture">
         /// Optional glTF texture. When null, use the pipeline particle material tinted by
-        /// <see cref="VrmxtVfxParticleData.StartColor"/>.
+        /// <see cref="VrmxtVfxParticleData.Color"/>.
         /// </param>
         public static ParticleSystem Create(
             VrmxtVfxResolvedEmitter emitter,
@@ -73,8 +73,8 @@ namespace UniVRMXT.Vfx
             var go = new GameObject(BuildObjectName(emitter));
             var transform = go.transform;
             transform.SetParent(emitter.NodeTransform, false);
-            transform.localPosition = emitter.LocalPosition;
-            transform.localRotation = emitter.LocalRotation;
+            transform.localPosition = Vector3.zero;
+            transform.localRotation = Quaternion.identity;
             transform.localScale = Vector3.one;
 
             var particleSystem = go.AddComponent<ParticleSystem>();
@@ -135,10 +135,10 @@ namespace UniVRMXT.Vfx
             main.playOnAwake = true;
             main.maxParticles = Mathf.Max(1, particle.MaxParticles);
             main.startLifetime = particle.Lifetime;
-            main.startSize = particle.StartSize;
+            ApplyWorldSpaceSize(main, particleSystem.transform, particle.SizeX, particle.SizeY);
             // Velocity comes from VelocityOverLifetime along local +Y (spec).
             main.startSpeed = 0f;
-            main.startColor = particle.StartColor;
+            main.startColor = particle.Color;
             main.simulationSpace = ParticleSystemSimulationSpace.Local;
             main.scalingMode = ParticleSystemScalingMode.Hierarchy;
 
@@ -166,6 +166,30 @@ namespace UniVRMXT.Vfx
         }
 
         /// <summary>
+        /// Map world-space sprite width/height (meters) onto <see cref="ParticleSystem.MainModule"/>
+        /// without inheriting parent node non-uniform scale (spec).
+        /// </summary>
+        public static void ApplyWorldSpaceSize(
+            ParticleSystem.MainModule main,
+            Transform particleTransform,
+            float worldWidth,
+            float worldHeight)
+        {
+            var parent = particleTransform != null ? particleTransform.parent : null;
+            var parentScale = parent != null ? parent.lossyScale : Vector3.one;
+            var safeScaleX = Mathf.Max(Mathf.Abs(parentScale.x), 1e-6f);
+            var safeScaleY = Mathf.Max(Mathf.Abs(parentScale.y), 1e-6f);
+
+            var localWidth = worldWidth / safeScaleX;
+            var localHeight = worldHeight / safeScaleY;
+
+            main.startSize3D = true;
+            main.startSizeX = localWidth;
+            main.startSizeY = localHeight;
+            main.startSizeZ = 1f;
+        }
+
+        /// <summary>
         /// Copy live <see cref="ParticleSystem"/> preview values back into portable
         /// <paramref name="emitter"/> fields (for Unity inspector edits before export).
         /// </summary>
@@ -180,10 +204,6 @@ namespace UniVRMXT.Vfx
 
             emitter.Particle ??= new VrmxtVfxParticleData();
             ReadInto(particleSystem, emitter.Particle);
-
-            var transform = particleSystem.transform;
-            emitter.LocalPosition = transform.localPosition;
-            emitter.LocalRotation = transform.localRotation;
         }
 
         /// <summary>
@@ -204,14 +224,37 @@ namespace UniVRMXT.Vfx
             var main = particleSystem.main;
             particle.MaxParticles = Mathf.Max(1, main.maxParticles);
             particle.Lifetime = ReadCurveConstant(main.startLifetime);
-            particle.StartSize = ReadCurveConstant(main.startSize);
-            particle.StartColor = ReadStartColor(main.startColor);
+            ReadWorldSpaceSize(main, particleSystem.transform, out particle.SizeX, out particle.SizeY);
+            particle.Color = ReadStartColor(main.startColor);
 
             var emission = particleSystem.emission;
             particle.EmissionRate = ReadCurveConstant(emission.rateOverTime);
 
             var velocity = particleSystem.velocityOverLifetime;
             particle.StartSpeed = ReadCurveConstant(velocity.y);
+        }
+
+        public static void ReadWorldSpaceSize(
+            ParticleSystem.MainModule main,
+            Transform particleTransform,
+            out float worldWidth,
+            out float worldHeight)
+        {
+            var parent = particleTransform != null ? particleTransform.parent : null;
+            var parentScale = parent != null ? parent.lossyScale : Vector3.one;
+            var safeScaleX = Mathf.Max(Mathf.Abs(parentScale.x), 1e-6f);
+            var safeScaleY = Mathf.Max(Mathf.Abs(parentScale.y), 1e-6f);
+
+            if (main.startSize3D)
+            {
+                worldWidth = ReadCurveConstant(main.startSizeX) * safeScaleX;
+                worldHeight = ReadCurveConstant(main.startSizeY) * safeScaleY;
+                return;
+            }
+
+            var uniform = ReadCurveConstant(main.startSize);
+            worldWidth = uniform * safeScaleX;
+            worldHeight = uniform * safeScaleY;
         }
 
         public static Color ReadStartColor(ParticleSystem.MinMaxGradient gradient)
@@ -269,17 +312,9 @@ namespace UniVRMXT.Vfx
 
         /// <summary>
         /// Pick an unlit particle shader for the active pipeline (BIRP or URP).
-        /// Always tries both host URP and BIRP particle shader names before the packaged
-        /// <see cref="PackagedShaderName"/> — during ScriptedImporter / early boot
-        /// <see cref="GraphicsSettings.currentRenderPipeline"/> is often null even in URP
-        /// projects, so gating on that alone can persist a Built-in CG material that pinks
-        /// under URP at runtime. Pipeline null/non-null only sets search <em>order</em>.
-        /// If all <see cref="Shader.Find"/> calls miss, <see cref="CreateOwnedParticleMaterial"/>
-        /// clones the Resources material (keeps packaged shader in builds).
         /// </summary>
         public static Shader ResolveParticleShader()
         {
-            // Prefer likely pipeline first, but always probe both before packaged.
             Shader preferred;
             Shader secondary;
             if (GraphicsSettings.currentRenderPipeline == null)
@@ -332,9 +367,6 @@ namespace UniVRMXT.Vfx
                 "UI/Default");
         }
 
-        /// <summary>
-        /// Assign texture to BIRP (<c>_MainTex</c>) and URP (<c>_BaseMap</c>) slots when present.
-        /// </summary>
         public static void ApplyTextureToMaterial(Material material, Texture texture)
         {
             if (material == null || texture == null)
@@ -383,11 +415,6 @@ namespace UniVRMXT.Vfx
             return material.mainTexture;
         }
 
-        /// <summary>
-        /// Configure blend state so texture / particle alpha is visible.
-        /// URP <c>Particles/Unlit</c> defaults to Opaque when created from script.
-        /// Texture decode already keeps PNG alpha; this is a material issue, not import.
-        /// </summary>
         public static void ConfigureTransparentAlphaBlending(Material material)
         {
             if (material == null)
@@ -395,19 +422,16 @@ namespace UniVRMXT.Vfx
                 return;
             }
 
-            // URP Lit/Particles Unlit surface type: 0 Opaque, 1 Transparent.
             if (material.HasProperty(SurfaceId))
             {
                 material.SetFloat(SurfaceId, 1f);
             }
 
-            // URP blend: 0 Alpha, 1 Premultiply, 2 Additive, 3 Multiply.
             if (material.HasProperty(BlendId))
             {
                 material.SetFloat(BlendId, 0f);
             }
 
-            // Built-in Particles/Standard Unlit rendering mode: 0 Opaque … 2 Fade, 3 Transparent.
             if (material.HasProperty(ModeId))
             {
                 material.SetFloat(ModeId, 2f);
@@ -436,7 +460,6 @@ namespace UniVRMXT.Vfx
             material.SetOverrideTag("RenderType", "Transparent");
             material.renderQueue = (int)RenderQueue.Transparent;
 
-            // Keep material tint white so ParticleSystem.startColor × texture alpha drives look.
             if (material.HasProperty(BaseColorId))
             {
                 material.SetColor(BaseColorId, Color.white);
@@ -497,8 +520,6 @@ namespace UniVRMXT.Vfx
 
             if (material == null)
             {
-                // ScriptedImporter / early boot: Shader.Find often fails. Clone Unity's default
-                // ParticleSystem material (usually Default-Particle) instead of leaving shader null.
                 var defaultMaterial = renderer != null ? renderer.sharedMaterial : null;
                 if (IsUsableMaterial(defaultMaterial))
                 {
@@ -556,7 +577,6 @@ namespace UniVRMXT.Vfx
 
         private static Material TryGetBuiltinParticleMaterial()
         {
-            // May be null outside Editor; ParticleSystem.sharedMaterial clone is the primary fallback.
             return Resources.GetBuiltinResource<Material>("Default-Particle.mat");
         }
 
