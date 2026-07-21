@@ -326,7 +326,6 @@ public static class VrmxtCharacterApply
                 "' root='" + root.name + "' applied=" + applied +
                 " catalogRefreshed=" + catalogRefreshed +
                 " pipeline=" + pipeline + ".");
-            DumpMaterialsOverrideDebug(character, root, store);
         }
         else
         {
@@ -394,23 +393,30 @@ public static class VrmxtCharacterApply
                 continue;
             }
 
-            var catalogKey = ResolveMaterialPropertiesCatalogKey(
-                catalog,
-                pair.MaterialName,
-                live.name);
-            if (string.IsNullOrEmpty(catalogKey))
-            {
-                continue;
-            }
-
             var props = BuildMaterialPropertiesCatalog(live);
             if (props.Count == 0)
             {
                 continue;
             }
 
-            catalog[catalogKey] = props;
-            refreshed++;
+            var catalogKeys = ResolveMaterialPropertiesCatalogKeys(
+                catalog,
+                pair.MaterialName,
+                live.name);
+            for (var k = 0; k < catalogKeys.Count; k++)
+            {
+                var catalogKey = catalogKeys[k];
+                if (string.IsNullOrEmpty(catalogKey))
+                {
+                    continue;
+                }
+
+                // Each key needs its own list instance — Warudo may mutate entries.
+                catalog[catalogKey] = k == 0
+                    ? props
+                    : new List<ShaderProperty>(props);
+                refreshed++;
+            }
         }
 
         return refreshed;
@@ -493,15 +499,17 @@ public static class VrmxtCharacterApply
     }
 
     /// <summary>
-    /// Prefer an existing <see cref="CharacterAsset.MaterialProperties"/> key that
-    /// matches the store/live name after <c> (Instance)</c> strip; otherwise insert
-    /// under the stripped live name (Warudo's usual key shape).
+    /// All existing <see cref="CharacterAsset.MaterialProperties"/> keys that match
+    /// the store/live name (exact first, then <c> (Instance)</c> strip). Returns every
+    /// match so both <c>Mat</c> and <c>Mat (Instance)</c> get rewritten. If none match,
+    /// inserts under the stripped live name (Warudo's usual key shape).
     /// </summary>
-    private static string ResolveMaterialPropertiesCatalogKey(
+    private static List<string> ResolveMaterialPropertiesCatalogKeys(
         Dictionary<string, List<ShaderProperty>> catalog,
         string storeKey,
         string liveName)
     {
+        var keys = new List<string>();
         var storeStripped =
             VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(storeKey);
         var liveStripped =
@@ -514,23 +522,52 @@ public static class VrmxtCharacterApply
                 continue;
             }
 
+            if (string.Equals(key, liveName, StringComparison.Ordinal) ||
+                string.Equals(key, storeKey, StringComparison.Ordinal))
+            {
+                if (!keys.Contains(key))
+                {
+                    keys.Add(key);
+                }
+            }
+        }
+
+        foreach (var key in catalog.Keys)
+        {
+            if (string.IsNullOrEmpty(key))
+            {
+                continue;
+            }
+
             var keyStripped =
                 VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(key);
-            if (string.Equals(key, storeKey, StringComparison.Ordinal) ||
-                string.Equals(key, liveName, StringComparison.Ordinal) ||
-                string.Equals(keyStripped, storeStripped, StringComparison.Ordinal) ||
-                string.Equals(keyStripped, liveStripped, StringComparison.Ordinal))
+            if (string.Equals(keyStripped, liveStripped, StringComparison.Ordinal) ||
+                string.Equals(keyStripped, storeStripped, StringComparison.Ordinal))
             {
-                return key;
+                if (!keys.Contains(key))
+                {
+                    keys.Add(key);
+                }
             }
+        }
+
+        if (keys.Count > 0)
+        {
+            return keys;
         }
 
         if (!string.IsNullOrEmpty(liveStripped))
         {
-            return liveStripped;
+            keys.Add(liveStripped);
+            return keys;
         }
 
-        return storeStripped;
+        if (!string.IsNullOrEmpty(storeStripped))
+        {
+            keys.Add(storeStripped);
+        }
+
+        return keys;
     }
 
     /// <summary>
