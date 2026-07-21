@@ -140,7 +140,9 @@ namespace UniVRMXT.Vfx
             main.startSpeed = 0f;
             main.startColor = particle.Color;
             main.simulationSpace = ParticleSystemSimulationSpace.Local;
-            main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+            // Local scaling: sizes are world meters on an identity-scale PS child and do not
+            // track the referenced node's live hierarchy scale (spec).
+            main.scalingMode = ParticleSystemScalingMode.Local;
 
             var emission = particleSystem.emission;
             emission.enabled = true;
@@ -166,8 +168,9 @@ namespace UniVRMXT.Vfx
         }
 
         /// <summary>
-        /// Map world-space sprite width/height (meters) onto <see cref="ParticleSystem.MainModule"/>
-        /// without inheriting parent node non-uniform scale (spec).
+        /// Map world-space sprite width/height (meters) onto <see cref="ParticleSystem.MainModule"/>.
+        /// Callers must use <see cref="ParticleSystemScalingMode.Local"/> on an identity-scale
+        /// particle child so dimensions do not inherit the referenced node scale.
         /// </summary>
         public static void ApplyWorldSpaceSize(
             ParticleSystem.MainModule main,
@@ -175,17 +178,13 @@ namespace UniVRMXT.Vfx
             float worldWidth,
             float worldHeight)
         {
-            var parent = particleTransform != null ? particleTransform.parent : null;
-            var parentScale = parent != null ? parent.lossyScale : Vector3.one;
-            var safeScaleX = Mathf.Max(Mathf.Abs(parentScale.x), 1e-6f);
-            var safeScaleY = Mathf.Max(Mathf.Abs(parentScale.y), 1e-6f);
-
-            var localWidth = worldWidth / safeScaleX;
-            var localHeight = worldHeight / safeScaleY;
+            // particleTransform retained for call-site clarity / future guards; Local scaling
+            // means start sizes are not multiplied by parent lossyScale.
+            _ = particleTransform;
 
             main.startSize3D = true;
-            main.startSizeX = localWidth;
-            main.startSizeY = localHeight;
+            main.startSizeX = Mathf.Max(worldWidth, 1e-6f);
+            main.startSizeY = Mathf.Max(worldHeight, 1e-6f);
             main.startSizeZ = 1f;
         }
 
@@ -240,21 +239,18 @@ namespace UniVRMXT.Vfx
             out float worldWidth,
             out float worldHeight)
         {
-            var parent = particleTransform != null ? particleTransform.parent : null;
-            var parentScale = parent != null ? parent.lossyScale : Vector3.one;
-            var safeScaleX = Mathf.Max(Mathf.Abs(parentScale.x), 1e-6f);
-            var safeScaleY = Mathf.Max(Mathf.Abs(parentScale.y), 1e-6f);
+            _ = particleTransform;
 
             if (main.startSize3D)
             {
-                worldWidth = ReadCurveConstant(main.startSizeX) * safeScaleX;
-                worldHeight = ReadCurveConstant(main.startSizeY) * safeScaleY;
+                worldWidth = ReadCurveConstant(main.startSizeX);
+                worldHeight = ReadCurveConstant(main.startSizeY);
                 return;
             }
 
             var uniform = ReadCurveConstant(main.startSize);
-            worldWidth = uniform * safeScaleX;
-            worldHeight = uniform * safeScaleY;
+            worldWidth = uniform;
+            worldHeight = uniform;
         }
 
         public static Color ReadStartColor(ParticleSystem.MinMaxGradient gradient)
