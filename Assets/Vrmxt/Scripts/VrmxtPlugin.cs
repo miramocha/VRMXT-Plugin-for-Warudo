@@ -20,7 +20,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.1.5",
+    Version = "0.1.7",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT"
 )]
@@ -108,6 +108,50 @@ public sealed class VrmxtPlugin : Plugin
         }
 
         SetApplyStatus("Manual apply started for " + started + " Character(s).");
+    }
+
+    [Trigger]
+    [Label("Dump Materials Debug")]
+    [Description(
+        "Log live post-override renderer shaders vs Character.MaterialProperties catalog " +
+        "(detects Warudo UI stuck on VRM1/MToon props). Does not touch Character.Materials.")]
+    public void DumpMaterialsDebugNow()
+    {
+        var scene = Context.OpenedScene;
+        if (scene == null)
+        {
+            SetApplyStatus("No scene is open.");
+            return;
+        }
+
+        var characters = scene.GetAssets<CharacterAsset>();
+        var dumped = 0;
+        for (var i = 0; i < characters.Count; i++)
+        {
+            var character = characters[i];
+            if (character == null || !character.IsNonNullAndActive())
+            {
+                continue;
+            }
+
+            var root = VrmxtCharacterApply.TryFindCharacterRoot(character);
+            if (root == null)
+            {
+                continue;
+            }
+
+            var store = root.GetComponent<VrmxtMaterialsOverrideInstance>();
+            VrmxtCharacterApply.DumpMaterialsOverrideDebug(character, root, store);
+            dumped++;
+        }
+
+        if (dumped == 0)
+        {
+            SetApplyStatus("No active Characters to dump.");
+            return;
+        }
+
+        SetApplyStatus("Materials debug dumped for " + dumped + " Character(s). See console.");
     }
 
     private void SetApplyStatus(string status)

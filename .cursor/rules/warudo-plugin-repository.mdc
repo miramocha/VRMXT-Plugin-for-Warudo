@@ -24,3 +24,16 @@ alwaysApply: true
   Avoid unrelated cleanup in legacy files.
 - Do not edit vendored or embedded UniVRM/VRMXT package trees as if they were first-party
   sources when an upstream or sibling repo owns them; identify the owning source first.
+
+## Plugin version bumps
+
+When asked to update / increment the plugin version, bump **all** of these that exist
+(keep them equal):
+
+- Plugin `[Plugin]` / assembly `Version` attribute (e.g. `Assets/Vrmxt/Scripts/VrmxtPlugin.cs`)
+- `umod/ExportSettings.example.asset` → primary mod profile `modVersion`
+- Live `Assets/ExportSettings.asset` → same `modVersion` (gitignored; still update if present)
+- Backup `umod/local/ExportSettings.asset.old` → same `modVersion` when the file exists
+
+Restoring from `.old` must not silently roll the version back. Prefer editing `.old`
+alongside the live file, or run `.\umod\export-settings.ps1 -Backup` after a correct bump.
