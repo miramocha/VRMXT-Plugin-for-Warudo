@@ -62,8 +62,8 @@ Keep pipeline assets **outside** `Assets/Vrmxt` so they are not exported into th
 Settings in the Editor).
 
 UMod sometimes deletes or empties `ExportSettings` when scripts change and Unity
-regains focus. Keep a local twin `Assets/ExportSettings.asset.old` (gitignored;
-UMod does not touch it) via `umod/export-settings.ps1 -Backup` / `-Restore`.
+regains focus. Keep a backup under `umod/local/` (gitignored; outside `Assets/` so
+Unity does not import it) via `umod/export-settings.ps1 -Backup` / `-Restore`.
 See `umod/README.md`.
 
 Warudo humanoid normalize zeros bone local rotations. Host (not UniVRMXT) applies

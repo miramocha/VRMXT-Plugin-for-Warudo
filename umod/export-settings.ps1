@@ -29,52 +29,14 @@ $meta = Join-Path $repoRoot "Assets\ExportSettings.asset.meta"
 $assetOld = Join-Path $localDir "ExportSettings.asset.old"
 $metaOld = Join-Path $localDir "ExportSettings.asset.meta.old"
 
-# Migrate legacy Assets/*.old backups if present. Never discard a newer legacy file.
-function Move-LegacyBackupIfSafe {
-    param(
-        [Parameter(Mandatory = $true)][string] $LegacyPath,
-        [Parameter(Mandatory = $true)][string] $DestPath,
-        [Parameter(Mandatory = $true)][string] $Label
-    )
-    if (-not (Test-Path $LegacyPath)) {
-        return
-    }
-    if (-not (Test-Path $DestPath)) {
-        Move-Item -LiteralPath $LegacyPath -Destination $DestPath -Force
-        Write-Host "Moved legacy $Label -> $DestPath"
-        return
-    }
-    $legacyItem = Get-Item -LiteralPath $LegacyPath
-    $destItem = Get-Item -LiteralPath $DestPath
-    $sameBytes = ($legacyItem.Length -eq $destItem.Length) -and
-        ((Get-FileHash -LiteralPath $LegacyPath -Algorithm SHA256).Hash -eq
-         (Get-FileHash -LiteralPath $DestPath -Algorithm SHA256).Hash)
-    if ($sameBytes) {
-        Remove-Item -LiteralPath $LegacyPath -Force
-        Write-Host "Removed duplicate legacy $Label (identical to umod/local)"
-        return
-    }
-    if ($legacyItem.LastWriteTimeUtc -gt $destItem.LastWriteTimeUtc) {
-        Copy-Item -LiteralPath $LegacyPath -Destination $DestPath -Force
-        Remove-Item -LiteralPath $LegacyPath -Force
-        Write-Host "Replaced umod/local $Label with newer legacy backup"
-        return
-    }
-    Write-Host "Kept both $Label copies (umod/local is newer or different). Remove Assets/*.old manually when sure."
-}
-
-$legacyAssetOld = Join-Path $repoRoot "Assets\ExportSettings.asset.old"
-$legacyMetaOld = Join-Path $repoRoot "Assets\ExportSettings.asset.meta.old"
-if ((Test-Path $legacyAssetOld) -or (Test-Path $legacyMetaOld)) {
-    New-Item -ItemType Directory -Path $localDir -Force | Out-Null
-    Move-LegacyBackupIfSafe -LegacyPath $legacyAssetOld -DestPath $assetOld -Label "ExportSettings.asset.old"
-    Move-LegacyBackupIfSafe -LegacyPath $legacyMetaOld -DestPath $metaOld -Label "ExportSettings.asset.meta.old"
-    @(
-        (Join-Path $repoRoot "Assets\ExportSettings.asset.old.meta"),
-        (Join-Path $repoRoot "Assets\ExportSettings.asset.meta.old.meta")
-    ) | ForEach-Object {
-        if (Test-Path $_) { Remove-Item -LiteralPath $_ -Force }
-    }
+# Unused Assets/ backup path — backups live under umod/local/ only.
+@(
+    (Join-Path $repoRoot "Assets\ExportSettings.asset.old"),
+    (Join-Path $repoRoot "Assets\ExportSettings.asset.meta.old"),
+    (Join-Path $repoRoot "Assets\ExportSettings.asset.old.meta"),
+    (Join-Path $repoRoot "Assets\ExportSettings.asset.meta.old.meta")
+) | ForEach-Object {
+    if (Test-Path $_) { Remove-Item -LiteralPath $_ -Force }
 }
 
 function Show-Status {

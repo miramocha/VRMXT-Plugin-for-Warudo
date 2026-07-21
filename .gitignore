@@ -112,11 +112,6 @@ InitTestScene*.unity*
 # Backup (outside Assets/ so Unity never imports twins): umod/export-settings.ps1
 /[Aa]ssets/ExportSettings.asset
 /[Aa]ssets/ExportSettings.asset.meta
-# Legacy backup paths (migrated to umod/local/)
-/[Aa]ssets/ExportSettings.asset.old
-/[Aa]ssets/ExportSettings.asset.meta.old
-/[Aa]ssets/ExportSettings.asset.old.meta
-/[Aa]ssets/ExportSettings.asset.meta.old.meta
 /umod/local/
 
 # UMod generated caches

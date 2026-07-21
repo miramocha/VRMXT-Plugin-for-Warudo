@@ -34,7 +34,6 @@ When asked to update / increment the plugin version, bump **all** of these that 
 - `umod/ExportSettings.example.asset` → primary mod profile `modVersion`
 - Live `Assets/ExportSettings.asset` → same `modVersion` (gitignored; still update if present)
 - Backup `umod/local/ExportSettings.asset.old` → same `modVersion` when the file exists
-  (legacy `Assets/ExportSettings.asset.old` is migrated by `umod/export-settings.ps1`)
 
 Restoring from `.old` must not silently roll the version back. Prefer editing `.old`
 alongside the live file, or run `.\umod\export-settings.ps1 -Backup` after a correct bump.
