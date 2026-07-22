@@ -13,8 +13,8 @@ using Warudo.Core.Utils;
 using Warudo.Plugins.Core.Assets.Character;
 
 /// <summary>
-/// VRMXT host plugin. Auto-attaches <c>VRMXT_vfx</c> and <c>VRMXT_materials_override</c>
-/// onto Character GameObjects after load.
+/// VRMXT host plugin. Auto-attaches <c>VRMXT_sprite_particle</c> and
+/// <c>VRMXT_materials_override</c> onto Character GameObjects after load.
 /// </summary>
 [PluginType(
     Id = "mira.vrmxt",

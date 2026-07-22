@@ -6,20 +6,22 @@ using Newtonsoft.Json.Linq;
 
 namespace UniVRMXT.Format
 {
+    /// <summary>
+    /// Parse / serialize root <c>VRMXT_sprite_particle</c>. Legacy roots
+    /// (<c>VRMXT_vfx</c>, <c>VRMXT_particle</c>) are ignored (no dual-read).
+    /// </summary>
     public static class VrmxtVfx
     {
-        public const string ExtensionName = "VRMXT_vfx";
+        public const string ExtensionName = "VRMXT_sprite_particle";
         public const string SpecVersionValue = "1.0";
 
         public const float DefaultEmissionRate = 10f;
         public const int DefaultMaxParticles = 64;
         public const float DefaultLifetime = 1f;
-        public const float DefaultStartSize = 0.05f;
         public const float DefaultStartSpeed = 0.1f;
 
-        public static readonly float[] DefaultStartColor = { 1f, 1f, 1f, 1f };
-        public static readonly float[] DefaultLocalPosition = { 0f, 0f, 0f };
-        public static readonly float[] DefaultLocalRotation = { 0f, 0f, 0f, 1f };
+        public static readonly float[] DefaultSize = { 0.05f, 0.05f };
+        public static readonly float[] DefaultColor = { 1f, 1f, 1f, 1f };
 
         public static bool TryParse(string json, out VrmxtVfxExtension result)
         {
@@ -91,7 +93,7 @@ namespace UniVRMXT.Format
         }
 
         /// <summary>
-        /// UTF-8 JSON bytes suitable for glTF <c>extensions.VRMXT_vfx</c>.
+        /// UTF-8 JSON bytes suitable for glTF <c>extensions.VRMXT_sprite_particle</c>.
         /// </summary>
         public static byte[] ToUtf8Json(VrmxtVfxExtension extension)
         {
@@ -123,9 +125,7 @@ namespace UniVRMXT.Format
         {
             var obj = new JObject
             {
-                ["type"] = string.IsNullOrEmpty(emitter.Type) ? "particle" : emitter.Type,
                 ["node"] = emitter.Node,
-                ["particle"] = BuildParticleObject(emitter.Particle),
             };
 
             if (!string.IsNullOrEmpty(emitter.Name))
@@ -133,61 +133,39 @@ namespace UniVRMXT.Format
                 obj["name"] = emitter.Name;
             }
 
-            if (!IsDefaultFloatArray(emitter.LocalPosition, DefaultLocalPosition))
+            if (emitter.Texture.HasValue)
             {
-                obj["localPosition"] = ToJArray(emitter.LocalPosition);
+                obj["texture"] = emitter.Texture.Value;
             }
 
-            if (!IsDefaultFloatArray(emitter.LocalRotation, DefaultLocalRotation))
+            if (!IsDefaultFloatArray(emitter.Size, DefaultSize))
             {
-                obj["localRotation"] = ToJArray(emitter.LocalRotation);
+                obj["size"] = ToJArray(emitter.Size);
             }
 
-            return obj;
-        }
-
-        private static JObject BuildParticleObject(VrmxtVfxParticle particle)
-        {
-            if (particle == null)
+            if (!IsDefaultFloatArray(emitter.Color, DefaultColor))
             {
-                return new JObject();
+                obj["color"] = ToJArray(emitter.Color);
             }
 
-            var obj = new JObject();
-
-            if (particle.Texture.HasValue)
+            if (!NearlyEqual(emitter.EmissionRate, DefaultEmissionRate))
             {
-                obj["texture"] = particle.Texture.Value;
+                obj["emissionRate"] = emitter.EmissionRate;
             }
 
-            if (!NearlyEqual(particle.EmissionRate, DefaultEmissionRate))
+            if (emitter.MaxParticles != DefaultMaxParticles)
             {
-                obj["emissionRate"] = particle.EmissionRate;
+                obj["maxParticles"] = emitter.MaxParticles;
             }
 
-            if (particle.MaxParticles != DefaultMaxParticles)
+            if (!NearlyEqual(emitter.Lifetime, DefaultLifetime))
             {
-                obj["maxParticles"] = particle.MaxParticles;
+                obj["lifetime"] = emitter.Lifetime;
             }
 
-            if (!NearlyEqual(particle.Lifetime, DefaultLifetime))
+            if (!NearlyEqual(emitter.StartSpeed, DefaultStartSpeed))
             {
-                obj["lifetime"] = particle.Lifetime;
-            }
-
-            if (!NearlyEqual(particle.StartSize, DefaultStartSize))
-            {
-                obj["startSize"] = particle.StartSize;
-            }
-
-            if (!NearlyEqual(particle.StartSpeed, DefaultStartSpeed))
-            {
-                obj["startSpeed"] = particle.StartSpeed;
-            }
-
-            if (!IsDefaultFloatArray(particle.StartColor, DefaultStartColor))
-            {
-                obj["startColor"] = ToJArray(particle.StartColor);
+                obj["startSpeed"] = emitter.StartSpeed;
             }
 
             return obj;
@@ -235,7 +213,7 @@ namespace UniVRMXT.Format
         private static bool TryGetExtensionObject(JToken root, out JObject extension)
         {
             extension = null;
-            if (root is not JObject rootObject)
+            if (!(root is JObject rootObject))
             {
                 return false;
             }
@@ -257,7 +235,9 @@ namespace UniVRMXT.Format
             }
 
             // Bare extension object (already extracted from glTF extensions map).
-            if (TryGetProperty(rootObject, "specVersion", out _))
+            // Only VRMXT_sprite_particle roots are accepted; legacy root keys are never looked up.
+            if (TryGetProperty(rootObject, "specVersion", out _) &&
+                TryGetProperty(rootObject, "emitters", out _))
             {
                 extension = rootObject;
                 return true;
@@ -283,19 +263,7 @@ namespace UniVRMXT.Format
         {
             emitter = null;
 
-            if (emitterToken is not JObject emitterObject)
-            {
-                return false;
-            }
-
-            if (!TryGetProperty(emitterObject, "type", out var typeToken) ||
-                typeToken.Type != JTokenType.String)
-            {
-                return false;
-            }
-
-            var type = typeToken.Value<string>();
-            if (!string.Equals(type, "particle", StringComparison.Ordinal))
+            if (!(emitterToken is JObject emitterObject))
             {
                 return false;
             }
@@ -307,28 +275,43 @@ namespace UniVRMXT.Format
                 return false;
             }
 
-            if (!TryReadFloatArray(emitterObject, "localPosition", 3, DefaultLocalPosition, out var localPosition))
+            int? texture = null;
+            if (TryGetProperty(emitterObject, "texture", out var textureToken))
+            {
+                if (!TryGetInt32(textureToken, out var textureIndex) || textureIndex < 0)
+                {
+                    return false;
+                }
+
+                texture = textureIndex;
+            }
+
+            if (!TryReadSize(emitterObject, out var size))
             {
                 return false;
             }
 
-            if (!TryReadFloatArray(emitterObject, "localRotation", 4, DefaultLocalRotation, out var localRotation))
+            if (!TryReadColor(emitterObject, out var color))
             {
                 return false;
             }
 
-            if (!IsValidQuaternion(localRotation))
+            if (!TryReadNonNegativeFloat(emitterObject, "emissionRate", DefaultEmissionRate, out var emissionRate))
             {
                 return false;
             }
 
-            if (!TryGetProperty(emitterObject, "particle", out var particleToken) ||
-                particleToken is not JObject particleObject)
+            if (!TryReadPositiveInt(emitterObject, "maxParticles", DefaultMaxParticles, out var maxParticles))
             {
                 return false;
             }
 
-            if (!TryParseParticle(particleObject, out var particle))
+            if (!TryReadNonNegativeFloat(emitterObject, "lifetime", DefaultLifetime, out var lifetime))
+            {
+                return false;
+            }
+
+            if (!TryReadNonNegativeFloat(emitterObject, "startSpeed", DefaultStartSpeed, out var startSpeed))
             {
                 return false;
             }
@@ -340,76 +323,58 @@ namespace UniVRMXT.Format
                 name = nameToken.Value<string>();
             }
 
-            emitter = new VrmxtVfxEmitter(name, type, node, localPosition, localRotation, particle);
+            emitter = new VrmxtVfxEmitter(
+                name,
+                node,
+                texture,
+                size,
+                color,
+                emissionRate,
+                maxParticles,
+                lifetime,
+                startSpeed);
             return true;
         }
 
-        private static bool TryParseParticle(JObject particleObject, out VrmxtVfxParticle particle)
+        private static bool TryReadSize(JObject parent, out float[] size)
         {
-            particle = null;
+            size = (float[])DefaultSize.Clone();
 
-            int? texture = null;
-            if (TryGetProperty(particleObject, "texture", out var textureToken))
+            if (!TryGetProperty(parent, "size", out var token))
             {
-                if (!TryGetInt32(textureToken, out var textureIndex) || textureIndex < 0)
+                return true;
+            }
+
+            if (token.Type != JTokenType.Array)
+            {
+                return false;
+            }
+
+            var items = new List<float>();
+            foreach (var item in (JArray)token)
+            {
+                if (!TryGetDouble(item, out var number) || !IsFinite(number) || number <= 0d)
                 {
                     return false;
                 }
 
-                texture = textureIndex;
+                items.Add((float)number);
             }
 
-            if (!TryReadNonNegativeFloat(particleObject, "emissionRate", DefaultEmissionRate, out var emissionRate))
+            if (items.Count != 2)
             {
                 return false;
             }
 
-            if (!TryReadPositiveInt(particleObject, "maxParticles", DefaultMaxParticles, out var maxParticles))
-            {
-                return false;
-            }
-
-            if (!TryReadNonNegativeFloat(particleObject, "lifetime", DefaultLifetime, out var lifetime))
-            {
-                return false;
-            }
-
-            if (!TryReadNonNegativeFloat(particleObject, "startSize", DefaultStartSize, out var startSize))
-            {
-                return false;
-            }
-
-            if (!TryReadNonNegativeFloat(particleObject, "startSpeed", DefaultStartSpeed, out var startSpeed))
-            {
-                return false;
-            }
-
-            if (!TryReadFloatArray(particleObject, "startColor", 4, DefaultStartColor, out var startColor))
-            {
-                return false;
-            }
-
-            particle = new VrmxtVfxParticle(
-                texture,
-                emissionRate,
-                maxParticles,
-                lifetime,
-                startSize,
-                startSpeed,
-                startColor);
+            size = items.ToArray();
             return true;
         }
 
-        private static bool TryReadFloatArray(
-            JObject parent,
-            string propertyName,
-            int length,
-            float[] defaults,
-            out float[] values)
+        private static bool TryReadColor(JObject parent, out float[] color)
         {
-            values = (float[])defaults.Clone();
+            color = (float[])DefaultColor.Clone();
 
-            if (!TryGetProperty(parent, propertyName, out var token))
+            if (!TryGetProperty(parent, "color", out var token))
             {
                 return true;
             }
@@ -430,12 +395,19 @@ namespace UniVRMXT.Format
                 items.Add((float)number);
             }
 
-            if (items.Count != length)
+            if (items.Count != 4)
             {
                 return false;
             }
 
-            values = items.ToArray();
+            // RGB >= 0; alpha in [0, 1].
+            if (items[0] < 0f || items[1] < 0f || items[2] < 0f ||
+                items[3] < 0f || items[3] > 1f)
+            {
+                return false;
+            }
+
+            color = items.ToArray();
             return true;
         }
 
@@ -517,17 +489,6 @@ namespace UniVRMXT.Format
             return true;
         }
 
-        private static bool IsValidQuaternion(float[] quaternion)
-        {
-            var magnitudeSquared = 0f;
-            for (var i = 0; i < quaternion.Length; i++)
-            {
-                magnitudeSquared += quaternion[i] * quaternion[i];
-            }
-
-            return magnitudeSquared > 0f;
-        }
-
         private static bool IsFinite(double value)
         {
             return !double.IsNaN(value) && !double.IsInfinity(value);
@@ -548,61 +509,41 @@ namespace UniVRMXT.Format
     {
         public VrmxtVfxEmitter(
             string name,
-            string type,
             int node,
-            IReadOnlyList<float> localPosition,
-            IReadOnlyList<float> localRotation,
-            VrmxtVfxParticle particle)
-        {
-            Name = name;
-            Type = type;
-            Node = node;
-            LocalPosition = localPosition;
-            LocalRotation = localRotation;
-            Particle = particle;
-        }
-
-        public string Name { get; }
-        public string Type { get; }
-        public int Node { get; }
-        public IReadOnlyList<float> LocalPosition { get; }
-        public IReadOnlyList<float> LocalRotation { get; }
-        public VrmxtVfxParticle Particle { get; }
-    }
-
-    public sealed class VrmxtVfxParticle
-    {
-        public VrmxtVfxParticle(
             int? texture,
+            IReadOnlyList<float> size,
+            IReadOnlyList<float> color,
             float emissionRate,
             int maxParticles,
             float lifetime,
-            float startSize,
-            float startSpeed,
-            IReadOnlyList<float> startColor)
+            float startSpeed)
         {
+            Name = name;
+            Node = node;
             Texture = texture;
+            Size = size;
+            Color = color;
             EmissionRate = emissionRate;
             MaxParticles = maxParticles;
             Lifetime = lifetime;
-            StartSize = startSize;
             StartSpeed = startSpeed;
-            StartColor = startColor;
         }
 
+        public string Name { get; }
+        public int Node { get; }
         public int? Texture { get; }
+        public IReadOnlyList<float> Size { get; }
+        public IReadOnlyList<float> Color { get; }
         public float EmissionRate { get; }
         public int MaxParticles { get; }
         public float Lifetime { get; }
-        public float StartSize { get; }
         public float StartSpeed { get; }
-        public IReadOnlyList<float> StartColor { get; }
 
         public override string ToString()
         {
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "particle(rate={0}, max={1})",
+                "sprite_particle(rate={0}, max={1})",
                 EmissionRate,
                 MaxParticles);
         }

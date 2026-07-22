@@ -7,17 +7,18 @@ using UnityEngine;
 /// <summary>
 /// Warudo humanoid normalize zeros bone local rotations (T-pose). glTF node rest
 /// frames still have non-identity orientation, so emitter local +Y (spec) points
-/// world-up instead of authored direction. Restore UniVRM-like model-relative rest
-/// rotation as a local correction on each particle child.
+/// world-up instead of authored direction. Apply glTF model-relative rest rotation
+/// as a local correction on each particle child (identity position).
 ///
+/// Offsets live on helper glTF nodes; this does not read emitter local TR fields.
 /// VRM 1.0 / UniVRM10 uses <c>Axes.X</c> (ReverseX) for glTF↔Unity, not ReverseZ
-/// (VRM 0 / default glTF). Wrong inverter mirrors left/right.
+/// (VRM 0 / default glTF).
 /// </summary>
 public static class VrmxtWarudoBoneAxisCorrection
 {
     /// <summary>
-    /// Re-apply emitter TR with glTF→Unity model-relative rest correction.
-    /// No-op when JSON parse fails or an emitter node is missing.
+    /// Rotate each owned particle child so local +Y matches glTF rest for
+    /// <c>emitters[].node</c>. No-op when JSON parse fails or a particle is missing.
     /// </summary>
     public static void Apply(VrmxtVfxInstance instance, string gltfJson)
     {
@@ -56,8 +57,8 @@ public static class VrmxtWarudoBoneAxisCorrection
                 continue;
             }
 
-            particleTransform.localPosition = correction * emitter.LocalPosition;
-            particleTransform.localRotation = correction * emitter.LocalRotation;
+            particleTransform.localPosition = Vector3.zero;
+            particleTransform.localRotation = correction;
 
             var emitDir = particleTransform.TransformDirection(Vector3.up);
             Debug.Log(
@@ -159,7 +160,6 @@ public static class VrmxtWarudoBoneAxisCorrection
                     rootIndex = parents[rootIndex];
                 }
 
-                // Vrm10Importer: InvertAxis = Axes.X (ReverseX), matching vrm.dev VRM-1.
                 var nodeUnity = ReverseXRotation(worlds[i].rotation);
                 var rootUnity = ReverseXRotation(worlds[rootIndex].rotation);
                 modelRelative[i] = Quaternion.Inverse(rootUnity) * nodeUnity;
@@ -268,9 +268,6 @@ public static class VrmxtWarudoBoneAxisCorrection
         return m;
     }
 
-    /// <summary>
-    /// UniGLTF <c>ReverseX</c> on quaternions (VRM 1.0 glTF↔Unity).
-    /// </summary>
     private static Quaternion ReverseXRotation(Quaternion q)
     {
         q.ToAngleAxis(out var angle, out var axis);

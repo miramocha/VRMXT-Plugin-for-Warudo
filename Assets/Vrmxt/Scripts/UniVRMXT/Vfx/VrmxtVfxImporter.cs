@@ -23,9 +23,15 @@ namespace UniVRMXT.Vfx
                 return false;
             }
 
+            var textureCount = TryGetTextureCount(json);
             var emitters = new List<VrmxtVfxEmitterData>();
             foreach (var emitter in extension.Emitters)
             {
+                if (!IsTextureStructurallyValid(emitter, textureCount))
+                {
+                    continue;
+                }
+
                 if (!IsNodeNameResolved(emitter.Node, resolveNode))
                 {
                     continue;
@@ -64,9 +70,15 @@ namespace UniVRMXT.Vfx
                 return false;
             }
 
+            var textureCount = TryGetTextureCount(json);
             var resolved = new List<VrmxtVfxResolvedEmitter>();
             foreach (var emitter in extension.Emitters)
             {
+                if (!IsTextureStructurallyValid(emitter, textureCount))
+                {
+                    continue;
+                }
+
                 var nodeTransform = resolveNode?.Invoke(emitter.Node);
                 if (nodeTransform == null)
                 {
@@ -78,6 +90,78 @@ namespace UniVRMXT.Vfx
 
             emitters = resolved;
             return true;
+        }
+
+        /// <summary>
+        /// Read <c>textures[].Length</c> from a full glTF document.
+        /// Returns null for bare extension JSON (unit tests / already-extracted objects)
+        /// where range checks are deferred.
+        /// </summary>
+        public static int? TryGetTextureCount(string gltfJson)
+        {
+            if (string.IsNullOrWhiteSpace(gltfJson))
+            {
+                return null;
+            }
+
+            try
+            {
+                var root = Newtonsoft.Json.Linq.JToken.Parse(gltfJson) as Newtonsoft.Json.Linq.JObject;
+                if (root == null)
+                {
+                    return null;
+                }
+
+                if (root.TryGetValue("textures", StringComparison.Ordinal, out var texturesToken) &&
+                    texturesToken is Newtonsoft.Json.Linq.JArray textures)
+                {
+                    return textures.Count;
+                }
+
+                // Full glTF without textures[] → any texture index is out of range.
+                if (root.ContainsKey("asset") || root.ContainsKey("nodes"))
+                {
+                    return 0;
+                }
+
+                // Bare extension object — range unknown.
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Structurally invalid texture index (out of <c>textures[]</c>) skips the emitter.
+        /// When texture count is unknown, accept non-negative indices (decode failure → white
+        /// solid fallback at runtime).
+        /// </summary>
+        public static bool IsTextureStructurallyValid(VrmxtVfxEmitter emitter, int? textureCount)
+        {
+            if (emitter == null)
+            {
+                return false;
+            }
+
+            if (!emitter.Texture.HasValue)
+            {
+                return true;
+            }
+
+            var index = emitter.Texture.Value;
+            if (index < 0)
+            {
+                return false;
+            }
+
+            if (!textureCount.HasValue)
+            {
+                return true;
+            }
+
+            return index < textureCount.Value;
         }
 
         private static Transform ResolveFromList(IReadOnlyList<Transform> nodes, int index)
@@ -106,11 +190,8 @@ namespace UniVRMXT.Vfx
             return new VrmxtVfxEmitterData
             {
                 Name = emitter.Name,
-                Type = emitter.Type,
                 Node = emitter.Node,
-                LocalPosition = ToVector3(emitter.LocalPosition),
-                LocalRotation = ToQuaternion(emitter.LocalRotation),
-                Particle = ToParticleData(emitter.Particle),
+                Particle = ToParticleData(emitter),
             };
         }
 
@@ -121,43 +202,28 @@ namespace UniVRMXT.Vfx
             return new VrmxtVfxResolvedEmitter
             {
                 Name = emitter.Name,
-                Type = emitter.Type,
                 Node = emitter.Node,
                 NodeTransform = nodeTransform,
-                LocalPosition = ToVector3(emitter.LocalPosition),
-                LocalRotation = ToQuaternion(emitter.LocalRotation),
-                Particle = ToParticleData(emitter.Particle),
+                Particle = ToParticleData(emitter),
             };
         }
 
-        private static VrmxtVfxParticleData ToParticleData(VrmxtVfxParticle particle)
+        private static VrmxtVfxParticleData ToParticleData(VrmxtVfxEmitter emitter)
         {
-            var startColor = particle.StartColor;
+            var color = emitter.Color;
+            var size = emitter.Size;
             return new VrmxtVfxParticleData
             {
-                HasTexture = particle.Texture.HasValue,
-                TextureIndex = particle.Texture ?? -1,
-                EmissionRate = particle.EmissionRate,
-                MaxParticles = particle.MaxParticles,
-                Lifetime = particle.Lifetime,
-                StartSize = particle.StartSize,
-                StartSpeed = particle.StartSpeed,
-                StartColor = new Color(
-                    startColor[0],
-                    startColor[1],
-                    startColor[2],
-                    startColor[3]),
+                HasTexture = emitter.Texture.HasValue,
+                TextureIndex = emitter.Texture ?? -1,
+                EmissionRate = emitter.EmissionRate,
+                MaxParticles = emitter.MaxParticles,
+                Lifetime = emitter.Lifetime,
+                SizeX = size[0],
+                SizeY = size[1],
+                StartSpeed = emitter.StartSpeed,
+                Color = new Color(color[0], color[1], color[2], color[3]),
             };
-        }
-
-        private static Vector3 ToVector3(IReadOnlyList<float> values)
-        {
-            return new Vector3(values[0], values[1], values[2]);
-        }
-
-        private static Quaternion ToQuaternion(IReadOnlyList<float> values)
-        {
-            return new Quaternion(values[0], values[1], values[2], values[3]);
         }
     }
 }

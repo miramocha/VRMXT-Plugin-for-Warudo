@@ -5,18 +5,24 @@ using UnityEngine;
 namespace UniVRMXT.Vfx
 {
     /// <summary>
-    /// Runtime holder for portable <c>VRMXT_vfx</c> emitters on a loaded avatar root.
+    /// Runtime holder for portable <c>VRMXT_sprite_particle</c> emitters on a loaded avatar root.
     /// Optional <see cref="BuildParticleSystems"/> maps fields onto Unity
     /// <see cref="ParticleSystem"/> children under each resolved node.
     /// </summary>
     [DisallowMultipleComponent]
+    [ExecuteAlways]
     public sealed class VrmxtVfxInstance : MonoBehaviour
     {
+        private const double EmitterPullSuppressSeconds = 0.25;
+
         [SerializeField]
         private List<VrmxtVfxResolvedEmitter> emitters = new();
 
         [SerializeField]
         private List<ParticleSystem> particleSystems = new();
+
+        [NonSerialized]
+        private double _suppressEmitterPullUntil;
 
         public IReadOnlyList<VrmxtVfxResolvedEmitter> Emitters => emitters;
 
@@ -37,7 +43,7 @@ namespace UniVRMXT.Vfx
         /// <summary>
         /// Spawn <see cref="ParticleSystem"/> children for current emitters.
         /// <paramref name="resolveTexture"/> maps glTF <c>textures[]</c> indices; null or
-        /// unresolved indices use the solid tint fallback (<see cref="VrmxtVfxParticleData.StartColor"/>).
+        /// unresolved indices use the solid tint fallback (<see cref="VrmxtVfxParticleData.Color"/>).
         /// </summary>
         public void BuildParticleSystems(Func<int, Texture> resolveTexture = null)
         {
@@ -45,6 +51,7 @@ namespace UniVRMXT.Vfx
             BindTexturesFromResolver(emitters, resolveTexture);
             particleSystems.AddRange(
                 VrmxtVfxParticleSystemMapper.CreateAll(emitters, resolveTexture));
+            SuppressEmitterPull();
         }
 
         /// <summary>
@@ -160,7 +167,11 @@ namespace UniVRMXT.Vfx
             return null;
         }
 
-        public void ClearParticleSystems()
+        /// <param name="destroyOwnedMaterials">
+        /// When false (export copy path), do not <c>DestroyImmediate</c> particle materials —
+        /// <see cref="GameObject.Instantiate"/> may still share them with the scene original.
+        /// </param>
+        public void ClearParticleSystems(bool destroyOwnedMaterials = true)
         {
             for (var i = 0; i < particleSystems.Count; i++)
             {
@@ -170,16 +181,155 @@ namespace UniVRMXT.Vfx
                     continue;
                 }
 
-                DestroyOwnedMaterial(particleSystem);
+                if (destroyOwnedMaterials)
+                {
+                    DestroyOwnedMaterial(particleSystem);
+                }
+                else
+                {
+                    // Detach marker + slot so OnDestroy cannot DestroyImmediate a shared mat.
+                    var marker = particleSystem.GetComponent<VrmxtVfxOwnedParticleMaterial>();
+                    if (marker != null)
+                    {
+                        DestroyOwnedObject(marker);
+                    }
+
+                    var renderer = particleSystem.GetComponent<ParticleSystemRenderer>();
+                    if (renderer != null)
+                    {
+                        renderer.sharedMaterial = null;
+                    }
+                }
+
                 DestroyOwned(particleSystem.gameObject);
             }
 
             particleSystems.Clear();
         }
 
+        /// <summary>
+        /// Push emitter portable fields onto existing preview <see cref="ParticleSystem"/>
+        /// children. Does not create or destroy systems.
+        /// </summary>
+        public void SyncParticleSystemsFromEmitters()
+        {
+            SuppressEmitterPull();
+
+            for (var i = 0; i < emitters.Count; i++)
+            {
+                var emitter = emitters[i];
+                if (emitter?.Particle == null)
+                {
+                    continue;
+                }
+
+                var particleSystem = FindParticleSystemChild(emitter);
+                if (particleSystem == null)
+                {
+                    continue;
+                }
+
+                VrmxtVfxParticleSystemMapper.Apply(
+                    particleSystem,
+                    emitter.Particle,
+                    emitter.Particle.Texture);
+            }
+        }
+
+        /// <summary>
+        /// Pull live preview <see cref="ParticleSystem"/> values back into emitter fields
+        /// (same path export uses). Skips briefly after Instance→PS push to avoid a loop.
+        /// </summary>
+        public void SyncEmittersFromParticleSystems()
+        {
+            if (Time.realtimeSinceStartupAsDouble < _suppressEmitterPullUntil)
+            {
+                return;
+            }
+
+            var changed = false;
+            for (var i = 0; i < emitters.Count; i++)
+            {
+                var emitter = emitters[i];
+                if (emitter == null)
+                {
+                    continue;
+                }
+
+                var particleSystem = FindParticleSystemChild(emitter);
+                if (particleSystem == null)
+                {
+                    continue;
+                }
+
+                if (!EmitterDiffersFromParticleSystem(emitter, particleSystem))
+                {
+                    continue;
+                }
+
+                VrmxtVfxParticleSystemMapper.ReadFromParticleSystem(particleSystem, emitter);
+                changed = true;
+            }
+
+            if (changed)
+            {
+                // Avoid immediately pushing the same values back through OnValidate Apply.
+                SuppressEmitterPull();
+            }
+        }
+
+        private void Update()
+        {
+            // Edit-mode + play: watch preview PS inspector edits → Instance fields.
+            SyncEmittersFromParticleSystems();
+        }
+
+        private void OnValidate()
+        {
+            SyncParticleSystemsFromEmitters();
+        }
+
         private void OnDestroy()
         {
             ClearParticleSystems();
+        }
+
+        private void SuppressEmitterPull()
+        {
+            _suppressEmitterPullUntil =
+                Time.realtimeSinceStartupAsDouble + EmitterPullSuppressSeconds;
+        }
+
+        private static bool EmitterDiffersFromParticleSystem(
+            VrmxtVfxResolvedEmitter emitter,
+            ParticleSystem particleSystem)
+        {
+            emitter.Particle ??= new VrmxtVfxParticleData();
+            var probe = new VrmxtVfxResolvedEmitter { Particle = new VrmxtVfxParticleData() };
+            VrmxtVfxParticleSystemMapper.ReadFromParticleSystem(particleSystem, probe);
+
+            var a = emitter.Particle;
+            var b = probe.Particle;
+            if (!Mathf.Approximately(a.EmissionRate, b.EmissionRate) ||
+                a.MaxParticles != b.MaxParticles ||
+                !Mathf.Approximately(a.Lifetime, b.Lifetime) ||
+                !Mathf.Approximately(a.SizeX, b.SizeX) ||
+                !Mathf.Approximately(a.SizeY, b.SizeY) ||
+                !Mathf.Approximately(a.StartSpeed, b.StartSpeed) ||
+                !ColorsApproximatelyEqual(a.Color, b.Color))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool ColorsApproximatelyEqual(Color a, Color b)
+        {
+            return Mathf.Approximately(a.r, b.r) &&
+                   Mathf.Approximately(a.g, b.g) &&
+                   Mathf.Approximately(a.b, b.b) &&
+                   Mathf.Approximately(a.a, b.a);
         }
 
         private static void DestroyOwnedMaterial(ParticleSystem particleSystem)
@@ -227,11 +377,8 @@ namespace UniVRMXT.Vfx
     public sealed class VrmxtVfxResolvedEmitter
     {
         public string Name;
-        public string Type = "particle";
         public int Node;
         public Transform NodeTransform;
-        public Vector3 LocalPosition;
-        public Quaternion LocalRotation = Quaternion.identity;
         public VrmxtVfxParticleData Particle = new();
     }
 }
