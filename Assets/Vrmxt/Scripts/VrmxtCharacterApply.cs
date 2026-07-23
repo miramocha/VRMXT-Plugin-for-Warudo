@@ -52,11 +52,15 @@ public static class VrmxtCharacterApply
     /// When <paramref name="deferMaterialsOverrideApply"/> is true, VFX still applies
     /// immediately and the override store/textures are prepared, but shader/properties
     /// are left for <see cref="ApplyMaterialsOverride"/>.
+    /// Feature flags skip attach and clear existing instances; materials off also
+    /// restores stock shaders from <see cref="VrmxtMaterialsStockShaders"/>.
     /// </summary>
     public static Result Apply(
         CharacterAsset character,
         byte[] glbBytes,
-        bool deferMaterialsOverrideApply = false)
+        bool deferMaterialsOverrideApply = false,
+        bool applySpriteParticle = true,
+        bool applyMaterialsOverride = true)
     {
         if (character == null || !character.IsNonNullAndActive())
         {
@@ -85,13 +89,25 @@ public static class VrmxtCharacterApply
 
         // VFX first while GlbTextures cache is live; materials then Remember + ReleaseOwnership
         // so Dispose does not Destroy textures still on particle mats / Instance.
-        attachedAny |= TryApplyVfx(character, root, glbBytes, result);
-        attachedAny |= TryApplyMaterialsOverride(
-            character,
-            root,
-            glbBytes,
-            result,
-            runApply: !deferMaterialsOverrideApply);
+        if (applySpriteParticle)
+        {
+            attachedAny |= TryApplyVfx(character, root, glbBytes, result);
+        }
+
+        if (applyMaterialsOverride)
+        {
+            attachedAny |= TryApplyMaterialsOverride(
+                character,
+                root,
+                glbBytes,
+                result,
+                runApply: !deferMaterialsOverrideApply);
+        }
+        else
+        {
+            // Store already cleared; put MToon/stock shaders back without scene reload.
+            VrmxtMaterialsStockShaders.Restore(root);
+        }
 
         if (!attachedAny)
         {
@@ -235,6 +251,8 @@ public static class VrmxtCharacterApply
 
         if (!runApply)
         {
+            // Snapshot stock (MToon) before deferred apply mutates in place.
+            VrmxtMaterialsStockShaders.CaptureIfAbsent(root);
             Debug.Log(
                 "VRMXT: materials override prepared (deferred apply) on Character '" +
                 character.Name + "' root='" + root.name + "'.");
@@ -309,6 +327,9 @@ public static class VrmxtCharacterApply
         {
             return 0;
         }
+
+        // Capture MToon / stock shaders before in-place override mutate.
+        VrmxtMaterialsStockShaders.CaptureIfAbsent(root);
 
         var pipeline = DetectActivePipelineForWarudo();
         var applied = VrmxtMaterialsOverrideApplier.Apply(
@@ -975,6 +996,7 @@ public static class VrmxtCharacterApply
 
         existing.ClearImportedTextures();
         Object.Destroy(existing);
+        // Keep stock shader snapshot so Clear / re-author can still restore MToon.
     }
 
     /// <summary>
