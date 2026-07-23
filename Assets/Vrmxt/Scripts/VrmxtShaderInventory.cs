@@ -72,7 +72,7 @@ public static class VrmxtShaderInventory
     }
 
     /// <summary>
-    /// Same filter as plugin dump: lil / VRMXT / MToon / Sample External.
+    /// Same filter as plugin dump: lil / Poiyomi / VRMXT / MToon / Sample External.
     /// </summary>
     public static bool IsRelevantShaderName(string name)
     {
@@ -82,6 +82,7 @@ public static class VrmxtShaderInventory
         }
 
         return name.IndexOf("lil", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               name.IndexOf("poiyomi", StringComparison.OrdinalIgnoreCase) >= 0 ||
                name.IndexOf("VRMXT", StringComparison.OrdinalIgnoreCase) >= 0 ||
                name.IndexOf("MToon", StringComparison.OrdinalIgnoreCase) >= 0 ||
                name.IndexOf("Sample External", StringComparison.OrdinalIgnoreCase) >= 0;

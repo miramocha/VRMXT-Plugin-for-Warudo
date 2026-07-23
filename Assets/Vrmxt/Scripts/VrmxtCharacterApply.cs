@@ -267,11 +267,13 @@ public static class VrmxtCharacterApply
             gltfJson,
             store,
             resolveTexture);
+        // Keep store even when applied==0 (missing shader / name miss). Wiping it
+        // dropped ExtensionJson so Manager Refresh only showed stock MToon.
         if (applied == 0)
         {
-            ClearExistingMaterialsOverride(root);
-            result.MaterialsOverride = null;
-            return false;
+            Debug.LogWarning(
+                "VRMXT: materials override store kept on '" + character.Name +
+                "' but 0 slots applied — check shader inventory / material names.");
         }
 
         return true;
@@ -829,6 +831,11 @@ public static class VrmxtCharacterApply
             shaderName.IndexOf("lil/", StringComparison.OrdinalIgnoreCase) >= 0)
         {
             return "lilToon";
+        }
+
+        if (shaderName.IndexOf("poiyomi", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return "poiyomi";
         }
 
         if (shaderName.IndexOf("MToon", StringComparison.OrdinalIgnoreCase) >= 0 ||

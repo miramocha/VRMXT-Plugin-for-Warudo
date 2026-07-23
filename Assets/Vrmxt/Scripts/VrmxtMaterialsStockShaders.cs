@@ -2,18 +2,22 @@ using System;
 using System.Collections.Generic;
 using UniVRMXT.MaterialsOverride;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 /// <summary>
-/// Remembers live material shader names before VRMXT override apply mutates them in place
+/// Remembers live materials before VRMXT override apply mutates them in place
 /// (Warudo path). Used by Clear All to restore MToon / stock look without scene reload.
+/// Snapshots are Material clones (shader + properties + keywords), keyed by root
+/// instance id — callers must <see cref="Forget"/> on Character unbind / source change.
 /// </summary>
 public static class VrmxtMaterialsStockShaders
 {
-    private static readonly Dictionary<int, Dictionary<string, string>> ByRootId =
-        new Dictionary<int, Dictionary<string, string>>();
+    private static readonly Dictionary<int, Dictionary<string, Material>> ByRootId =
+        new Dictionary<int, Dictionary<string, Material>>();
 
     /// <summary>
-    /// Snapshot stripped material name → shader name once per root, before first mutate.
+    /// Snapshot stripped material name → Material clone once per root, before first mutate.
+    /// Empty captures are not stored so a later retry can succeed when renderers appear.
     /// </summary>
     public static void CaptureIfAbsent(GameObject root)
     {
@@ -28,7 +32,7 @@ public static class VrmxtMaterialsStockShaders
             return;
         }
 
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        var map = new Dictionary<string, Material>(StringComparer.Ordinal);
         var renderers = root.GetComponentsInChildren<Renderer>(true);
         for (var r = 0; r < renderers.Length; r++)
         {
@@ -63,8 +67,16 @@ public static class VrmxtMaterialsStockShaders
                     continue;
                 }
 
-                map[name] = mat.shader.name;
+                map[name] = CloneStock(mat);
             }
+        }
+
+        if (map.Count == 0)
+        {
+            Debug.LogWarning(
+                "VRMXT: stock capture empty for root '" + root.name +
+                "' — will retry on next CaptureIfAbsent.");
+            return;
         }
 
         ByRootId[id] = map;
@@ -78,11 +90,23 @@ public static class VrmxtMaterialsStockShaders
             return;
         }
 
-        ByRootId.Remove(root.GetInstanceID());
+        Forget(root.GetInstanceID());
+    }
+
+    public static void Forget(int rootInstanceId)
+    {
+        if (!ByRootId.TryGetValue(rootInstanceId, out var map))
+        {
+            return;
+        }
+
+        ByRootId.Remove(rootInstanceId);
+        DestroyClones(map);
     }
 
     /// <summary>
-    /// Restore snapped stock shaders onto live materials. Returns slots written.
+    /// Restore snapped stock materials (shader + properties) onto live slots.
+    /// Returns slots written.
     /// </summary>
     public static int Restore(GameObject root)
     {
@@ -94,7 +118,7 @@ public static class VrmxtMaterialsStockShaders
         if (!ByRootId.TryGetValue(root.GetInstanceID(), out var map) || map == null || map.Count == 0)
         {
             Debug.LogWarning(
-                "VRMXT: no stock shader snapshot for root '" + (root != null ? root.name : "?") +
+                "VRMXT: no stock shader snapshot for root '" + root.name +
                 "'. Reload Character to capture stock before override apply.");
             return 0;
         }
@@ -102,11 +126,21 @@ public static class VrmxtMaterialsStockShaders
         var restored = 0;
         foreach (var pair in map)
         {
-            var shader = ResolveShader(pair.Value);
+            var stock = pair.Value;
+            if (stock == null || stock.shader == null)
+            {
+                Debug.LogWarning(
+                    "VRMXT: stock snapshot missing for '" + pair.Key + "'.");
+                continue;
+            }
+
+            // Ensure shader asset still resolves (cross-mod / uMod).
+            var shader = ResolveShader(stock.shader.name);
             if (shader == null)
             {
                 Debug.LogWarning(
-                    "VRMXT: stock shader unresolved '" + pair.Value + "' for '" + pair.Key + "'.");
+                    "VRMXT: stock shader unresolved '" + stock.shader.name +
+                    "' for '" + pair.Key + "'.");
                 continue;
             }
 
@@ -119,11 +153,50 @@ public static class VrmxtMaterialsStockShaders
                 }
 
                 live.shader = shader;
+                live.CopyPropertiesFromMaterial(stock);
                 restored++;
             }
         }
 
         return restored;
+    }
+
+    private static Material CloneStock(Material source)
+    {
+        var clone = new Material(source)
+        {
+            name = source.name + " (VRMXT Stock)",
+            hideFlags = HideFlags.HideAndDontSave,
+        };
+        return clone;
+    }
+
+    private static void DestroyClones(Dictionary<string, Material> map)
+    {
+        if (map == null)
+        {
+            return;
+        }
+
+        foreach (var pair in map)
+        {
+            var clone = pair.Value;
+            if (clone == null)
+            {
+                continue;
+            }
+
+            if (Application.isPlaying)
+            {
+                Object.Destroy(clone);
+            }
+            else
+            {
+                Object.DestroyImmediate(clone);
+            }
+        }
+
+        map.Clear();
     }
 
     private static Shader ResolveShader(string shaderName)

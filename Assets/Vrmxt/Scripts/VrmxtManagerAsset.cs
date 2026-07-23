@@ -29,18 +29,21 @@ public sealed class VrmxtManagerAsset : Asset
     public CharacterAsset Character;
 
     [DataInput]
-    [Label("Enable Sprite Particle")]
+    [Label("Enable sprite particle")]
     [Description("Apply VRMXT_sprite_particle on this Character. Off clears live VFX.")]
+    [HiddenIf(nameof(HideVrmxtControls))]
     public bool EnableSpriteParticle = true;
 
     [DataInput]
-    [Label("Enable Materials Override")]
+    [Label("Enable materials override")]
     [Description(
         "Apply VRMXT_materials_override on this Character. Off restores stock shaders. " +
         "Required for Apply / Clear / Export below.")]
+    [HiddenIf(nameof(HideVrmxtControls))]
     public bool EnableMaterialsOverride = true;
 
     [Markdown]
+    [HiddenIf(nameof(HideVrmxtControls))]
     public string Hint =
         "Add one VRMXT Manager per Character. Feature toggles default on. " +
         "Without a Manager, the plugin still applies both features. " +
@@ -52,11 +55,13 @@ public sealed class VrmxtManagerAsset : Asset
     [Description(
         "Filled from the Character. Use Refresh after load. Pick shaders then Apply. " +
         "Add/remove rows are ignored on Apply/Export — Refresh rebuilds the list.")]
+    [HiddenIf(nameof(HideVrmxtControls))]
     public VrmxtMaterialShaderRow[] Materials = Array.Empty<VrmxtMaterialShaderRow>();
 
     [DataInput]
-    [Label("Export File Suffix")]
+    [Label("Export file suffix")]
     [Description("Inserted before .vrm. Default .vrmxt → Characters/Foo.vrmxt.vrm")]
+    [HiddenIf(nameof(HideVrmxtControls))]
     public string ExportFileSuffix = VrmxtPatchExport.DefaultFileSuffix;
 
     [Markdown]
@@ -67,6 +72,7 @@ public sealed class VrmxtManagerAsset : Asset
     private bool _applyInProgress;
     private bool _clearInProgress;
     private bool _suppressCharacterWatch;
+    private Guid _characterSourceWatch;
 
     protected override void OnCreate()
     {
@@ -76,6 +82,30 @@ public sealed class VrmxtManagerAsset : Asset
         Watch<bool>(nameof(EnableMaterialsOverride), OnFeatureToggleChanged);
         SetActive(true);
         ReconcileDuplicateClaimsIfNeeded();
+        RefreshCharacterSourceWatch();
+    }
+
+    /// <summary>True → hide feature / materials / export controls (not VRM1 or no Character).</summary>
+    protected bool HideVrmxtControls() => !IsAssignedVrm1Character();
+
+    /// <summary>
+    /// VRM 1.0 Characters expose <see cref="CharacterAsset.Vrm10Instance"/>;
+    /// VRM 0.x uses <see cref="CharacterAsset.VRMBlendShapeProxy"/> instead.
+    /// </summary>
+    private bool IsAssignedVrm1Character()
+    {
+        if (Character == null || !Character.IsNonNullAndActive())
+        {
+            return false;
+        }
+
+        if (Character.Vrm10Instance != null)
+        {
+            return true;
+        }
+
+        // Explicit VRM0 — keep controls hidden (also covers mid-load before either is set).
+        return false;
     }
 
     protected bool FilterLocalCharacter(CharacterAsset character)
@@ -102,6 +132,8 @@ public sealed class VrmxtManagerAsset : Asset
             return;
         }
 
+        RefreshCharacterSourceWatch();
+
         if (Character != null &&
             VrmxtCharacterOwnership.IsClaimedByOther(Character.Id, Id, CollectSceneClaims()))
         {
@@ -111,20 +143,55 @@ public sealed class VrmxtManagerAsset : Asset
             return;
         }
 
-        // Sync fill first (same as pre-export-fix path). Re-fill after plugin apply.
-        RefreshMaterials();
-        RefreshAfterPluginApplyAsync().Forget();
+        // Plugin apply first, then fill Materials list — avoid racing Refresh against
+        // Apply which destroys the materials-override component at start.
+        SyncCharacterAsync().Forget();
     }
 
-    private async UniTaskVoid RefreshAfterPluginApplyAsync()
+    private void RefreshCharacterSourceWatch()
     {
+        if (_characterSourceWatch != Guid.Empty)
+        {
+            Unwatch(_characterSourceWatch);
+            _characterSourceWatch = Guid.Empty;
+        }
+
+        if (Character == null)
+        {
+            return;
+        }
+
+        _characterSourceWatch = Watch(Character, "Source", OnCharacterChanged);
+    }
+
+    private async UniTaskVoid SyncCharacterAsync()
+    {
+        if (Character == null || !Character.IsNonNullAndActive())
+        {
+            SetDataInput(nameof(Materials), Array.Empty<VrmxtMaterialShaderRow>(), broadcast: true);
+            SetStatus("Select a VRM 1.0 Character.");
+            Broadcast();
+            return;
+        }
+
+        // Wait for Character load / plugin apply so Vrm10Instance is available when VRM1.
         await RequestPluginApplyAsync(deferMaterialsOverride: false);
-        RefreshMaterials();
+
+        if (!IsAssignedVrm1Character())
+        {
+            SetDataInput(nameof(Materials), Array.Empty<VrmxtMaterialShaderRow>(), broadcast: true);
+            SetStatus("'" + Character.Name + "' is not VRM 1.0.");
+            Broadcast();
+            return;
+        }
+
+        await RefreshMaterialsAsync(reApplyOverrides: false);
+        Broadcast();
     }
 
     private void OnFeatureToggleChanged(bool from, bool to)
     {
-        if (from == to)
+        if (from == to || !IsAssignedVrm1Character())
         {
             return;
         }
@@ -137,10 +204,29 @@ public sealed class VrmxtManagerAsset : Asset
     }
 
     [Trigger]
-    [Label("Refresh Materials")]
-    [Description("Rebuild the material list from the Character store and renderers.")]
+    [Label("Refresh materials")]
+    [Description(
+        "Rebuild the material list from the Character VRM / store. Re-attaches file " +
+        "overrides when the live store is empty, then re-applies if Materials Override is on.")]
+    [HiddenIf(nameof(HideVrmxtControls))]
     public void RefreshMaterials()
     {
+        RefreshMaterialsAsync(reApplyOverrides: true).Forget();
+    }
+
+    private async UniTask RefreshMaterialsAsync(bool reApplyOverrides)
+    {
+        if (!IsAssignedVrm1Character())
+        {
+            SetStatus(
+                Character == null || !Character.IsNonNullAndActive()
+                    ? "Select a VRM 1.0 Character."
+                    : "'" + Character.Name + "' is not VRM 1.0.");
+            SetDataInput(nameof(Materials), Array.Empty<VrmxtMaterialShaderRow>(), broadcast: true);
+            Broadcast();
+            return;
+        }
+
         if (Character == null || !Character.IsNonNullAndActive())
         {
             SetStatus("Select an active local Character.");
@@ -157,11 +243,94 @@ public sealed class VrmxtManagerAsset : Asset
         }
 
         var store = root.GetComponent<VrmxtMaterialsOverrideInstance>();
+        var attachedFromFile = false;
+        var applied = 0;
+        string gltfJsonForApply = null;
+
+        // Recover ExtensionJson when load apply wiped/missed the store.
+        if (!StoreHasOverrideJson(store))
+        {
+            if (!VrmxtCharacterSource.TryGetPersistentRelativePath(Character.Source, out var relativePath) ||
+                !Context.PersistentDataManager.HasFile(relativePath))
+            {
+                SetStatus("Character Source is not a readable local character:// .vrm.");
+            }
+            else
+            {
+                try
+                {
+                    var bytes = await Context.PersistentDataManager.ReadFileBytesAsync(relativePath);
+                    if (GlbChunks.TryExtractJson(bytes, out var gltfJson) &&
+                        !string.IsNullOrEmpty(gltfJson) &&
+                        VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out store) &&
+                        store != null)
+                    {
+                        gltfJsonForApply = gltfJson;
+                        attachedFromFile = StoreHasOverrideJson(store);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning("VRMXT: Refresh Materials re-attach failed: " + e.Message);
+                }
+            }
+        }
+
+        // Re-apply when Materials Override is on (covers late lilToon warm / prior applied=0).
+        if (reApplyOverrides &&
+            EnableMaterialsOverride &&
+            StoreHasOverrideJson(store))
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(gltfJsonForApply) &&
+                    VrmxtCharacterSource.TryGetPersistentRelativePath(Character.Source, out var path) &&
+                    Context.PersistentDataManager.HasFile(path))
+                {
+                    var bytes = await Context.PersistentDataManager.ReadFileBytesAsync(path);
+                    GlbChunks.TryExtractJson(bytes, out gltfJsonForApply);
+                }
+
+                if (!string.IsNullOrEmpty(gltfJsonForApply))
+                {
+                    VrmxtMaterialsStockShaders.CaptureIfAbsent(root);
+                    Func<int, Texture> resolveTexture = index =>
+                        store.TryGetImportedTexture(index, out var texture) ? texture : null;
+                    applied = VrmxtMaterialsOverrideApplier.Apply(
+                        root,
+                        store,
+                        gltfJsonForApply,
+                        VrmxtCharacterApply.DetectActivePipelineForWarudo(),
+                        resolveTexture);
+                    if (applied > 0)
+                    {
+                        VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(
+                            Character, root, store);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("VRMXT: Refresh Materials re-apply failed: " + e.Message);
+            }
+        }
+
         if (store != null && (store.Pairs == null || store.Pairs.Count == 0))
         {
             store.PopulatePairsFromRenderers();
         }
 
+        FillMaterialsFromStore(root, store);
+
+        var overrideCount = CountOverrideJson(store);
+        SetStatus(
+            "Refreshed " + (Materials?.Length ?? 0) + " material(s); overrides=" +
+            overrideCount + " reAttached=" + attachedFromFile + " applied=" + applied +
+            " [" + Character.Name + "].");
+    }
+
+    private void FillMaterialsFromStore(GameObject root, VrmxtMaterialsOverrideInstance store)
+    {
         var rows = VrmxtMaterialsShaderAuthoring.CollectMaterialRows(root, store);
         var structured = new VrmxtMaterialShaderRow[rows.Count];
         for (var i = 0; i < rows.Count; i++)
@@ -176,7 +345,25 @@ public sealed class VrmxtManagerAsset : Asset
         }
 
         SetDataInput(nameof(Materials), structured, broadcast: true);
-        SetStatus("Loaded " + structured.Length + " material(s) from '" + Character.Name + "'.");
+    }
+
+    private static int CountOverrideJson(VrmxtMaterialsOverrideInstance store)
+    {
+        if (store?.Pairs == null)
+        {
+            return 0;
+        }
+
+        var n = 0;
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(store.Pairs[i]?.ExtensionJson))
+            {
+                n++;
+            }
+        }
+
+        return n;
     }
 
     private static bool StoreHasOverrideJson(VrmxtMaterialsOverrideInstance store)
@@ -299,26 +486,29 @@ public sealed class VrmxtManagerAsset : Asset
     }
 
     [Trigger]
-    [Label("Apply Shader Overrides")]
+    [Label("Apply shader overrides")]
     [Description("Write shader selections into the VRMXT store and re-apply on the Character.")]
+    [HiddenIf(nameof(HideVrmxtControls))]
     public void ApplyShaderOverrides()
     {
         ApplyShaderOverridesAsync().Forget();
     }
 
     [Trigger]
-    [Label("Clear All Material Overrides")]
+    [Label("Clear all material overrides")]
     [Description(
         "Empty VRMXT materials-override JSON and restore stock shaders (MToon snapshot from " +
         "before override apply). Does not rewrite the source .vrm file.")]
+    [HiddenIf(nameof(HideVrmxtControls))]
     public void ClearAllMaterialOverrides()
     {
         ClearAllMaterialOverridesAsync().Forget();
     }
 
     [Trigger]
-    [Label("Export VRMXT Patch")]
+    [Label("Export VRMXT patch")]
     [Description("Patch current materials override JSON into a new copy of the Character's local VRM.")]
+    [HiddenIf(nameof(HideVrmxtControls))]
     public void ExportVrmxtPatch()
     {
         ExportAsync().Forget();
@@ -436,9 +626,16 @@ public sealed class VrmxtManagerAsset : Asset
         _suppressCharacterWatch = true;
         try
         {
+            if (_characterSourceWatch != Guid.Empty)
+            {
+                Unwatch(_characterSourceWatch);
+                _characterSourceWatch = Guid.Empty;
+            }
+
             SetDataInput(nameof(Character), null, broadcast: true);
             SetDataInput(nameof(Materials), Array.Empty<VrmxtMaterialShaderRow>(), broadcast: true);
             SetStatus(status);
+            Broadcast();
         }
         finally
         {
@@ -478,6 +675,16 @@ public sealed class VrmxtManagerAsset : Asset
         _applyInProgress = true;
         try
         {
+            if (!IsAssignedVrm1Character())
+            {
+                SetStatus(
+                    Character != null
+                        ? "'" + Character.Name + "' is not VRM 1.0."
+                        : "Select a VRM 1.0 Character.");
+                Broadcast();
+                return;
+            }
+
             if (!EnableMaterialsOverride)
             {
                 SetStatus("Enable Materials Override first.");
@@ -606,6 +813,16 @@ public sealed class VrmxtManagerAsset : Asset
         _clearInProgress = true;
         try
         {
+            if (!IsAssignedVrm1Character())
+            {
+                SetStatus(
+                    Character != null
+                        ? "'" + Character.Name + "' is not VRM 1.0."
+                        : "Select a VRM 1.0 Character.");
+                Broadcast();
+                return;
+            }
+
             if (!EnableMaterialsOverride)
             {
                 SetStatus("Enable Materials Override first.");
@@ -690,6 +907,16 @@ public sealed class VrmxtManagerAsset : Asset
         _exportInProgress = true;
         try
         {
+            if (!IsAssignedVrm1Character())
+            {
+                SetStatus(
+                    Character != null
+                        ? "'" + Character.Name + "' is not VRM 1.0."
+                        : "Select a VRM 1.0 Character.");
+                Broadcast();
+                return;
+            }
+
             if (!EnableMaterialsOverride)
             {
                 SetStatus("Enable Materials Override first.");

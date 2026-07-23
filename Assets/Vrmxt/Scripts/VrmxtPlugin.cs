@@ -46,7 +46,7 @@ public sealed class VrmxtPlugin : Plugin
     /// finish post-load material setup. Manual apply ignores this delay.
     /// </summary>
     [DataInput]
-    [Label("Materials Override Defer (seconds)")]
+    [Label("Materials override defer (seconds)")]
     [IntegerSlider(0, 30)]
     [Description("Seconds to wait after load before applying materials override. 0 = immediate.")]
     public int MaterialsOverrideDeferSeconds = 2;
@@ -57,11 +57,11 @@ public sealed class VrmxtPlugin : Plugin
         "VFX clears immediately when disabled.";
 
     [Markdown]
-    [Label("Apply Status")]
+    [Label("Apply status")]
     public string ApplyStatus = "Idle.";
 
     [Trigger]
-    [Label("Apply VRMXT Override")]
+    [Label("Apply VRMXT override")]
     [Description(
         "Re-apply VRMXT VFX and materials override on all active Characters in the open scene. " +
         "Materials override runs immediately (no startup delay).")]
@@ -117,7 +117,7 @@ public sealed class VrmxtPlugin : Plugin
     }
 
     [Trigger]
-    [Label("Dump Materials Debug")]
+    [Label("Dump materials debug")]
     [Description(
         "Log live post-override renderer shaders vs Character.MaterialProperties catalog " +
         "(detects Warudo UI stuck on VRM1/MToon props). Does not touch Character.Materials.")]
@@ -397,12 +397,13 @@ public sealed class VrmxtPlugin : Plugin
 
     /// <summary>
     /// Debug dump: ModHost cache + <see cref="Shader.Find"/> probes + loaded Shader assets.
-    /// Use when materials override fails (esp. cross-mod lilToon / SampleShader).
+    /// Use when materials override fails (esp. cross-mod lilToon / Poiyomi / SampleShader).
     /// </summary>
     private void LogAvailableShaders(string reason)
     {
         var findLilToon = Shader.Find("lilToon");
         var findLilCutout = Shader.Find("Hidden/lilToonCutout");
+        var findPoiyomi = Shader.Find(".poiyomi/Poiyomi Toon");
         var findSample = Shader.Find("VRMXT/Samples/ExternalShaderPlugin");
         var findTestBuiltin = Shader.Find("VRMXT/Samples/TestOverrideBuiltin");
         var findTestUrp = Shader.Find("VRMXT/Samples/TestOverrideURP");
@@ -411,6 +412,7 @@ public sealed class VrmxtPlugin : Plugin
             "VRMXT: shader inventory (" + reason + "): modCache=" + _modShaders.Count +
             " Shader.Find lilToon=" + (findLilToon != null ? "ok" : "null") +
             " Hidden/lilToonCutout=" + (findLilCutout != null ? "ok" : "null") +
+            " .poiyomi/Poiyomi Toon=" + (findPoiyomi != null ? "ok" : "null") +
             " Samples/External=" + (findSample != null ? "ok" : "null") +
             " Samples/TestBuiltin=" + (findTestBuiltin != null ? "ok" : "null") +
             " Samples/TestURP=" + (findTestUrp != null ? "ok" : "null") + ".");
@@ -668,9 +670,15 @@ public sealed class VrmxtPlugin : Plugin
 
         _bound.Remove(characterId);
 
-        if (bound.Character != null && bound.SourceWatchHandle != Guid.Empty)
+        if (bound.Character != null)
         {
-            Unwatch(bound.Character, bound.SourceWatchHandle);
+            var root = VrmxtCharacterApply.TryFindCharacterRoot(bound.Character);
+            VrmxtMaterialsStockShaders.Forget(root);
+
+            if (bound.SourceWatchHandle != Guid.Empty)
+            {
+                Unwatch(bound.Character, bound.SourceWatchHandle);
+            }
         }
 
         bound.DisposeApply();
@@ -701,6 +709,11 @@ public sealed class VrmxtPlugin : Plugin
         {
             return;
         }
+
+        // Source changed — drop prior stock snapshot so CaptureIfAbsent re-clones
+        // fresh MToon (and so recycled instance IDs cannot restore the wrong avatar).
+        var root = VrmxtCharacterApply.TryFindCharacterRoot(character);
+        VrmxtMaterialsStockShaders.Forget(root);
 
         ApplyAsync(characterId, character, generation, deferMaterialsOverride: true).Forget();
     }

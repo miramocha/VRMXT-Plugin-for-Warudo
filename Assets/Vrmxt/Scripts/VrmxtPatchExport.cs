@@ -172,6 +172,13 @@ public static class VrmxtPatchExport
                 continue;
             }
 
+            // Skip stock MToon — those stay on VRMC_materials_mtoon only.
+            var shaderName = VrmxtMaterialsShaderAuthoring.TryGetActiveShaderName(pair);
+            if (VrmxtMaterialsOverrideAuthoring.IsStockUnityMtoonShader(shaderName))
+            {
+                continue;
+            }
+
             entries.Add(new MaterialEntry(
                 pair.MaterialName,
                 pair.ExtensionJson,
@@ -343,8 +350,22 @@ public static class VrmxtPatchExport
 
         if (entry.GltfMaterialIndex >= 0 && entry.GltfMaterialIndex < materials.Count)
         {
-            materialIndex = entry.GltfMaterialIndex;
-            return true;
+            if (materials[entry.GltfMaterialIndex] is JObject indexedObject)
+            {
+                var indexedName = VrmxtMaterialsOverrideRuntime.GetMaterialName(
+                    indexedObject, entry.GltfMaterialIndex);
+                if (string.IsNullOrEmpty(entry.MaterialName) ||
+                    string.Equals(
+                        NormalizeMaterialName(indexedName),
+                        NormalizeMaterialName(entry.MaterialName),
+                        StringComparison.Ordinal))
+                {
+                    materialIndex = entry.GltfMaterialIndex;
+                    return true;
+                }
+
+                // Stale index — fall through to name search.
+            }
         }
 
         if (string.IsNullOrEmpty(entry.MaterialName))

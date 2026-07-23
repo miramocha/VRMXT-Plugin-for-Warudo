@@ -14,6 +14,30 @@ namespace UniVRMXT.MaterialsOverride
     {
         public const string DefaultProviderId = "com.miramocha.univrmxt";
 
+        /// <summary>
+        /// UniVRM / VRM 1.0 stock MToon — not a VRMXT override target. Leave on
+        /// <c>VRMC_materials_mtoon</c> only.
+        /// </summary>
+        public static bool IsStockUnityMtoonShader(string shaderName)
+        {
+            if (string.IsNullOrWhiteSpace(shaderName))
+            {
+                return false;
+            }
+
+            shaderName = shaderName.Trim();
+            if (string.Equals(shaderName, "VRM10/MToon10", StringComparison.Ordinal) ||
+                string.Equals(shaderName, "VRM10/MToon10Outline", StringComparison.Ordinal) ||
+                string.Equals(shaderName, "VRM/MToon", StringComparison.Ordinal) ||
+                string.Equals(shaderName, "VRM/MToonOutline", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            // Defensive: any VRM10/MToon* stock path.
+            return shaderName.StartsWith("VRM10/MToon", StringComparison.Ordinal);
+        }
+
         public static void SyncAllFromOverrideMaterials(VrmxtMaterialsOverrideInstance instance)
         {
             if (instance == null)
@@ -47,6 +71,12 @@ namespace UniVRMXT.MaterialsOverride
 
             var material = pair.OverrideMaterial;
             var shaderName = material.shader.name;
+            if (IsStockUnityMtoonShader(shaderName))
+            {
+                pair.ExtensionJson = null;
+                return;
+            }
+
             var activePipeline = VrmxtMaterialsOverrideApplier.DetectActivePipeline();
             var activeVariant = UnityOverrideSelector.RenderPipelineVariantToVariantString(activePipeline);
 
@@ -576,6 +606,14 @@ namespace UniVRMXT.MaterialsOverride
                 }
 
                 if (live == null)
+                {
+                    continue;
+                }
+
+                // Live still on stock MToon: do not snapshot props. Never clear a
+                // non-stock ExtensionJson here — apply may have failed / not run yet
+                // (live stays MToon while JSON still wants lilToon etc.).
+                if (IsStockUnityMtoonShader(live.shader.name))
                 {
                     continue;
                 }

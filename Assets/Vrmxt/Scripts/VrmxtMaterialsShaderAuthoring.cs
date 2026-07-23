@@ -160,6 +160,13 @@ public static class VrmxtMaterialsShaderAuthoring
             return false;
         }
 
+        // Stock MToon 1.0 / VRM MToon — clear override; do not author VRMXT JSON.
+        if (VrmxtMaterialsOverrideAuthoring.IsStockUnityMtoonShader(shaderName))
+        {
+            pair.ExtensionJson = null;
+            return true;
+        }
+
         var activePipeline = VrmxtMaterialsOverrideApplier.DetectActivePipeline();
         var activeVariant = UnityOverrideSelector.RenderPipelineVariantToVariantString(activePipeline);
 
