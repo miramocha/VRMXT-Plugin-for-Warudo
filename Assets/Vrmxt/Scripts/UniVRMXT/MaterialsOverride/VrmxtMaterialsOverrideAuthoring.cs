@@ -14,6 +14,30 @@ namespace UniVRMXT.MaterialsOverride
     {
         public const string DefaultProviderId = "com.miramocha.univrmxt";
 
+        /// <summary>
+        /// UniVRM / VRM 1.0 stock MToon — not a VRMXT override target. Leave on
+        /// <c>VRMC_materials_mtoon</c> only.
+        /// </summary>
+        public static bool IsStockUnityMtoonShader(string shaderName)
+        {
+            if (string.IsNullOrWhiteSpace(shaderName))
+            {
+                return false;
+            }
+
+            shaderName = shaderName.Trim();
+            if (string.Equals(shaderName, "VRM10/MToon10", StringComparison.Ordinal) ||
+                string.Equals(shaderName, "VRM10/MToon10Outline", StringComparison.Ordinal) ||
+                string.Equals(shaderName, "VRM/MToon", StringComparison.Ordinal) ||
+                string.Equals(shaderName, "VRM/MToonOutline", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            // Defensive: any VRM10/MToon* stock path.
+            return shaderName.StartsWith("VRM10/MToon", StringComparison.Ordinal);
+        }
+
         public static void SyncAllFromOverrideMaterials(VrmxtMaterialsOverrideInstance instance)
         {
             if (instance == null)
@@ -47,6 +71,12 @@ namespace UniVRMXT.MaterialsOverride
 
             var material = pair.OverrideMaterial;
             var shaderName = material.shader.name;
+            if (IsStockUnityMtoonShader(shaderName))
+            {
+                pair.ExtensionJson = null;
+                return;
+            }
+
             var activePipeline = VrmxtMaterialsOverrideApplier.DetectActivePipeline();
             var activeVariant = UnityOverrideSelector.RenderPipelineVariantToVariantString(activePipeline);
 
@@ -527,27 +557,220 @@ namespace UniVRMXT.MaterialsOverride
                         break;
                     }
                     case ShaderPropertyType.Texture:
-                    {
-                        if (material.GetTexture(name) == null)
-                        {
-                            break;
-                        }
-
-                        // Placeholder index; export PrepareTextures remaps from live material.
-                        list.Add(new VrmxtMaterialProperty(
-                            name,
-                            VrmxtMaterialsOverride.TargetTypeTexture,
-                            null,
-                            null,
-                            null,
-                            0));
+                        // Omit textures from VRMXT JSON. Warudo Character Material Properties
+                        // (Images folder) owns texture overrides; patch export cannot pack
+                        // new GLB images.
                         break;
-                    }
                 }
             }
 
             CaptureShaderFeatures(material, list);
             return list;
+        }
+
+        /// <summary>
+        /// Replace active-unity <c>properties</c> on each store pair with a non-texture
+        /// snapshot from the live Character renderer material. Keeps shader, bindings,
+        /// and sibling overrides. Returns pairs updated.
+        /// </summary>
+        public static int SyncPropertiesFromLiveMaterials(
+            VrmxtMaterialsOverrideInstance store,
+            GameObject root)
+        {
+            if (store?.Pairs == null || root == null)
+            {
+                return 0;
+            }
+
+            var updated = 0;
+            for (var i = 0; i < store.Pairs.Count; i++)
+            {
+                var pair = store.Pairs[i];
+                if (pair == null ||
+                    string.IsNullOrEmpty(pair.MaterialName) ||
+                    string.IsNullOrWhiteSpace(pair.ExtensionJson))
+                {
+                    continue;
+                }
+
+                Material live = null;
+                foreach (var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                             root,
+                             pair.MaterialName))
+                {
+                    if (material != null && material.shader != null)
+                    {
+                        live = material;
+                        break;
+                    }
+                }
+
+                if (live == null)
+                {
+                    continue;
+                }
+
+                // Live still on stock MToon: do not snapshot props. Never clear a
+                // non-stock ExtensionJson here — apply may have failed / not run yet
+                // (live stays MToon while JSON still wants lilToon etc.).
+                if (IsStockUnityMtoonShader(live.shader.name))
+                {
+                    continue;
+                }
+
+                if (!TryReplaceActiveUnityProperties(pair, CaptureProperties(live)))
+                {
+                    continue;
+                }
+
+                updated++;
+            }
+
+            return updated;
+        }
+
+        /// <summary>
+        /// Drop <c>texture</c>-typed entries from a properties list (kept for shader-only
+        /// upserts that would otherwise preserve stale texture indices).
+        /// </summary>
+        public static List<VrmxtMaterialProperty> WithoutTextureProperties(
+            IReadOnlyList<VrmxtMaterialProperty> properties)
+        {
+            var list = new List<VrmxtMaterialProperty>();
+            if (properties == null)
+            {
+                return list;
+            }
+
+            for (var i = 0; i < properties.Count; i++)
+            {
+                var property = properties[i];
+                if (property == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(
+                        property.Type,
+                        VrmxtMaterialsOverride.TargetTypeTexture,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                list.Add(property);
+            }
+
+            return list;
+        }
+
+        private static bool TryReplaceActiveUnityProperties(
+            VrmxtMaterialsOverridePair pair,
+            IReadOnlyList<VrmxtMaterialProperty> properties)
+        {
+            if (pair == null ||
+                string.IsNullOrWhiteSpace(pair.ExtensionJson) ||
+                !VrmxtMaterialsOverride.TryParse(pair.ExtensionJson, out var existing))
+            {
+                return false;
+            }
+
+            var activePipeline = VrmxtMaterialsOverrideApplier.DetectActivePipeline();
+            var activeVariant =
+                UnityOverrideSelector.RenderPipelineVariantToVariantString(activePipeline);
+
+            MaterialProvider provider = null;
+            IReadOnlyList<VrmxtMaterialBinding> bindings = Array.Empty<VrmxtMaterialBinding>();
+            string shaderName = null;
+            string slotVariant = null;
+            var siblings = new List<VrmxtMaterialEngineOverride>();
+            VrmxtMaterialEngineOverride emptyVariantUnity = null;
+
+            for (var i = 0; i < existing.Overrides.Count; i++)
+            {
+                var entry = existing.Overrides[i];
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(entry.Engine, VrmxtMaterialsOverride.EngineUnity, StringComparison.Ordinal))
+                {
+                    siblings.Add(entry);
+                    continue;
+                }
+
+                var unity = entry.Material as UnityMaterialOverride;
+                if (unity == null)
+                {
+                    siblings.Add(entry);
+                    continue;
+                }
+
+                if (string.Equals(unity.Variant, activeVariant, StringComparison.Ordinal))
+                {
+                    provider = unity.Provider;
+                    bindings = entry.Bindings;
+                    shaderName = unity.Id;
+                    slotVariant = unity.Variant;
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(unity.Variant))
+                {
+                    emptyVariantUnity = entry;
+                    continue;
+                }
+
+                siblings.Add(entry);
+            }
+
+            if (string.IsNullOrEmpty(shaderName) && emptyVariantUnity != null)
+            {
+                var emptyUnity = emptyVariantUnity.Material as UnityMaterialOverride;
+                provider = emptyUnity?.Provider;
+                bindings = emptyVariantUnity.Bindings;
+                shaderName = emptyUnity?.Id;
+                slotVariant = activeVariant;
+                emptyVariantUnity = null;
+            }
+            else if (emptyVariantUnity != null)
+            {
+                siblings.Add(emptyVariantUnity);
+            }
+
+            if (string.IsNullOrEmpty(shaderName))
+            {
+                return false;
+            }
+
+            if (slotVariant == null)
+            {
+                slotVariant = activeVariant;
+            }
+
+            if (provider == null)
+            {
+                provider = new MaterialProvider(DefaultProviderId, ResolvePackageVersion());
+            }
+
+            var unityMaterial = new UnityMaterialOverride(
+                VrmxtMaterialsOverride.UnityMaterialIdTypeShaderName,
+                shaderName,
+                slotVariant,
+                provider);
+
+            var unityOverride = new VrmxtMaterialEngineOverride(
+                VrmxtMaterialsOverride.EngineUnity,
+                unityMaterial,
+                bindings,
+                properties ?? Array.Empty<VrmxtMaterialProperty>());
+
+            var overrides = new List<VrmxtMaterialEngineOverride> { unityOverride };
+            overrides.AddRange(siblings);
+            pair.ExtensionJson = VrmxtMaterialsOverride.ToJson(
+                new VrmxtMaterialsOverrideExtension(overrides));
+            return true;
         }
 
         private static void CaptureShaderFeatures(Material material, List<VrmxtMaterialProperty> list)

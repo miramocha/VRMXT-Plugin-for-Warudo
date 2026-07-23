@@ -33,6 +33,8 @@ import them as a second `ExportSettings` ScriptableObject:
 .\umod\export-settings.ps1 -Status
 ```
 
+Or in Unity: **Tools → UMod Export Settings → Restore / Backup / Status**.
+
 Or ask the agent to restore from `.old`.
 
 ## Plugin version bumps

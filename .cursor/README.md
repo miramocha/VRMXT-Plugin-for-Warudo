@@ -5,6 +5,9 @@ Shared Unity coding and agent guidance for the VRMXT Plugin for Warudo Unity pro
 Generic rules (`unity-*.mdc`), handoff/generated rules, and the `validate-unity-meta`
 skill are copied from Extended-UniVRM so collaborators get the same Cursor project
 guidance on clone. Repo-specific layout lives in `rules/warudo-plugin-repository.mdc`.
+User-facing VRMXT label voice lives in `rules/ui-labels.mdc` (sentence case across
+Warudo / Blender / catalogs; not part of deslop). Keep in sync with sibling copies
+in Warudo Shader Plugins and VRMXT-Extension-for-Blender.
 
 ## Project assumptions
 

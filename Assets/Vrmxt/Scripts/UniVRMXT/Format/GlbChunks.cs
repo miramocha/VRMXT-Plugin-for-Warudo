@@ -99,6 +99,116 @@ namespace UniVRMXT.Format
             return true;
         }
 
+        /// <summary>
+        /// Build a GLB 2 buffer from UTF-8 JSON text and an optional BIN chunk payload.
+        /// JSON is padded with spaces (<c>0x20</c>); BIN with zeros. Does not mutate inputs.
+        /// </summary>
+        public static bool TryRebuild(string json, byte[] binChunk, out byte[] glb)
+        {
+            glb = null;
+            if (string.IsNullOrEmpty(json))
+            {
+                return false;
+            }
+
+            byte[] jsonUtf8;
+            try
+            {
+                jsonUtf8 = Encoding.UTF8.GetBytes(json);
+            }
+            catch (EncoderFallbackException)
+            {
+                return false;
+            }
+
+            if (jsonUtf8.Length == 0)
+            {
+                return false;
+            }
+
+            var jsonPaddedLen = Align4(jsonUtf8.Length);
+            if (jsonPaddedLen < 0)
+            {
+                return false;
+            }
+
+            var hasBin = binChunk != null && binChunk.Length > 0;
+            var binPaddedLen = 0;
+            if (hasBin)
+            {
+                binPaddedLen = Align4(binChunk.Length);
+                if (binPaddedLen < 0)
+                {
+                    return false;
+                }
+            }
+
+            long totalLong = 12L + 8L + jsonPaddedLen;
+            if (hasBin)
+            {
+                totalLong += 8L + binPaddedLen;
+            }
+
+            if (totalLong > int.MaxValue)
+            {
+                return false;
+            }
+
+            var total = (int)totalLong;
+            var output = new byte[total];
+            var offset = 0;
+
+            // Header: magic, version 2, total length.
+            Buffer.BlockCopy(Magic, 0, output, offset, 4);
+            offset += 4;
+            WriteUInt32Le(output, offset, 2);
+            offset += 4;
+            WriteUInt32Le(output, offset, (uint)total);
+            offset += 4;
+
+            // JSON chunk.
+            WriteUInt32Le(output, offset, (uint)jsonPaddedLen);
+            offset += 4;
+            Buffer.BlockCopy(JsonChunkType, 0, output, offset, 4);
+            offset += 4;
+            Buffer.BlockCopy(jsonUtf8, 0, output, offset, jsonUtf8.Length);
+            for (var i = jsonUtf8.Length; i < jsonPaddedLen; i++)
+            {
+                output[offset + i] = (byte)' ';
+            }
+
+            offset += jsonPaddedLen;
+
+            if (hasBin)
+            {
+                WriteUInt32Le(output, offset, (uint)binPaddedLen);
+                offset += 4;
+                Buffer.BlockCopy(BinChunkType, 0, output, offset, 4);
+                offset += 4;
+                Buffer.BlockCopy(binChunk, 0, output, offset, binChunk.Length);
+                // Remaining pad bytes stay 0 from array allocation.
+            }
+
+            glb = output;
+            return true;
+        }
+
+        private static int Align4(int length)
+        {
+            if (length < 0)
+            {
+                return -1;
+            }
+
+            var padded = (length + 3) & ~3;
+            if (padded < length)
+            {
+                return -1;
+            }
+
+            return padded;
+        }
+
         private static bool IsGlb(byte[] data)
         {
             for (var i = 0; i < 4; i++)
@@ -118,6 +228,14 @@ namespace UniVRMXT.Format
                           (data[offset + 1] << 8) |
                           (data[offset + 2] << 16) |
                           (data[offset + 3] << 24));
+        }
+
+        private static void WriteUInt32Le(byte[] data, int offset, uint value)
+        {
+            data[offset] = (byte)(value & 0xFF);
+            data[offset + 1] = (byte)((value >> 8) & 0xFF);
+            data[offset + 2] = (byte)((value >> 16) & 0xFF);
+            data[offset + 3] = (byte)((value >> 24) & 0xFF);
         }
     }
 

@@ -20,12 +20,18 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.1.7",
+    Version = "0.1.10",
     Author = "Mira",
-    SupportUrl = "https://github.com/miramocha/UniVRMXT"
+    SupportUrl = "https://github.com/miramocha/UniVRMXT",
+    AssetTypes = new[] { typeof(VrmxtManagerAsset) }
 )]
 public sealed class VrmxtPlugin : Plugin
 {
+    /// <summary>
+    /// Live plugin instance for Manager assets to request re-apply.
+    /// </summary>
+    public static VrmxtPlugin ActiveInstance { get; private set; }
+
     /// <summary>
     /// When off, VRMXT does not attach VFX / materials override on Characters.
     /// Turning off clears attached VFX immediately; reload the scene to restore
@@ -40,7 +46,7 @@ public sealed class VrmxtPlugin : Plugin
     /// finish post-load material setup. Manual apply ignores this delay.
     /// </summary>
     [DataInput]
-    [Label("Materials Override Defer (seconds)")]
+    [Label("Materials override defer (seconds)")]
     [IntegerSlider(0, 30)]
     [Description("Seconds to wait after load before applying materials override. 0 = immediate.")]
     public int MaterialsOverrideDeferSeconds = 2;
@@ -51,11 +57,11 @@ public sealed class VrmxtPlugin : Plugin
         "VFX clears immediately when disabled.";
 
     [Markdown]
-    [Label("Apply Status")]
+    [Label("Apply status")]
     public string ApplyStatus = "Idle.";
 
     [Trigger]
-    [Label("Apply VRMXT Override")]
+    [Label("Apply VRMXT override")]
     [Description(
         "Re-apply VRMXT VFX and materials override on all active Characters in the open scene. " +
         "Materials override runs immediately (no startup delay).")]
@@ -111,7 +117,7 @@ public sealed class VrmxtPlugin : Plugin
     }
 
     [Trigger]
-    [Label("Dump Materials Debug")]
+    [Label("Dump materials debug")]
     [Description(
         "Log live post-override renderer shaders vs Character.MaterialProperties catalog " +
         "(detects Warudo UI stuck on VRM1/MToon props). Does not touch Character.Materials.")]
@@ -190,13 +196,16 @@ public sealed class VrmxtPlugin : Plugin
     protected override void OnCreate()
     {
         base.OnCreate();
+        ActiveInstance = this;
         BindPackagedParticleMaterial();
         WarmPackagedMaterialsOverrideShaders();
         BindMaterialsOverrideShaderResolve();
+        VrmxtShaderInventory.ExtraNamesProvider = () => _modShaders.Keys;
         LogAvailableShaders("OnCreate");
         Watch<bool>(nameof(EnableVrmxt), OnEnableVrmxtChanged);
         if (EnableVrmxt && Context.OpenedScene != null)
         {
+            VrmxtManagerAsset.ReconcileAllDuplicateClaims(Context.OpenedScene);
             BindAllCharacters(Context.OpenedScene);
         }
     }
@@ -207,6 +216,7 @@ public sealed class VrmxtPlugin : Plugin
         {
             if (Context.OpenedScene != null)
             {
+                VrmxtManagerAsset.ReconcileAllDuplicateClaims(Context.OpenedScene);
                 BindAllCharacters(Context.OpenedScene);
             }
 
@@ -218,10 +228,52 @@ public sealed class VrmxtPlugin : Plugin
 
     protected override void OnDestroy()
     {
+        if (ActiveInstance == this)
+        {
+            ActiveInstance = null;
+        }
+
         UnbindAll();
         ClearPackagedParticleMaterial();
         ClearMaterialsOverrideShaderResolve();
+        VrmxtShaderInventory.ExtraNamesProvider = null;
         base.OnDestroy();
+    }
+
+    /// <summary>
+    /// Re-apply VRMXT for one Character (Manager toggles / Character assign).
+    /// </summary>
+    public void RequestCharacterApply(CharacterAsset character, bool deferMaterialsOverride = false)
+    {
+        RequestCharacterApplyAsync(character, deferMaterialsOverride).Forget();
+    }
+
+    /// <summary>
+    /// Awaitable re-apply so Manager can refresh the Materials list after the store exists.
+    /// </summary>
+    public UniTask RequestCharacterApplyAsync(
+        CharacterAsset character,
+        bool deferMaterialsOverride = false)
+    {
+        if (!EnableVrmxt || character == null)
+        {
+            return UniTask.CompletedTask;
+        }
+
+        if (!_bound.ContainsKey(character.Id))
+        {
+            BindCharacter(character);
+        }
+
+        if (!_bound.TryGetValue(character.Id, out var bound))
+        {
+            return UniTask.CompletedTask;
+        }
+
+        bound.ApplyGeneration++;
+        var generation = bound.ApplyGeneration;
+        bound.DisposeApply();
+        return ApplyAsync(character.Id, character, generation, deferMaterialsOverride);
     }
 
     /// <summary>
@@ -345,12 +397,13 @@ public sealed class VrmxtPlugin : Plugin
 
     /// <summary>
     /// Debug dump: ModHost cache + <see cref="Shader.Find"/> probes + loaded Shader assets.
-    /// Use when materials override fails (esp. cross-mod lilToon / SampleShader).
+    /// Use when materials override fails (esp. cross-mod lilToon / Poiyomi / SampleShader).
     /// </summary>
     private void LogAvailableShaders(string reason)
     {
         var findLilToon = Shader.Find("lilToon");
         var findLilCutout = Shader.Find("Hidden/lilToonCutout");
+        var findPoiyomi = Shader.Find(".poiyomi/Poiyomi Toon");
         var findSample = Shader.Find("VRMXT/Samples/ExternalShaderPlugin");
         var findTestBuiltin = Shader.Find("VRMXT/Samples/TestOverrideBuiltin");
         var findTestUrp = Shader.Find("VRMXT/Samples/TestOverrideURP");
@@ -359,6 +412,7 @@ public sealed class VrmxtPlugin : Plugin
             "VRMXT: shader inventory (" + reason + "): modCache=" + _modShaders.Count +
             " Shader.Find lilToon=" + (findLilToon != null ? "ok" : "null") +
             " Hidden/lilToonCutout=" + (findLilCutout != null ? "ok" : "null") +
+            " .poiyomi/Poiyomi Toon=" + (findPoiyomi != null ? "ok" : "null") +
             " Samples/External=" + (findSample != null ? "ok" : "null") +
             " Samples/TestBuiltin=" + (findTestBuiltin != null ? "ok" : "null") +
             " Samples/TestURP=" + (findTestUrp != null ? "ok" : "null") + ".");
@@ -387,30 +441,23 @@ public sealed class VrmxtPlugin : Plugin
             return;
         }
 
-        var interesting = new List<string>();
+        var relevant = VrmxtShaderInventory.CollectRelevantShaderNames();
+        // Collect already includes mod-cache extras; dump wants loaded-only count too.
+        var loadedRelevant = 0;
         for (var i = 0; i < loaded.Length; i++)
         {
             var shader = loaded[i];
-            if (shader == null || string.IsNullOrEmpty(shader.name))
+            if (shader != null && VrmxtShaderInventory.IsRelevantShaderName(shader.name))
             {
-                continue;
-            }
-
-            var n = shader.name;
-            if (n.IndexOf("lil", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                n.IndexOf("VRMXT", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                n.IndexOf("MToon", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                n.IndexOf("Sample External", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                interesting.Add(n);
+                loadedRelevant++;
             }
         }
 
-        interesting.Sort(StringComparer.Ordinal);
         Debug.Log(
             "VRMXT: loaded shaders total=" + loaded.Length +
-            " interesting(lil|VRMXT|MToon|Sample)=" + interesting.Count +
-            (interesting.Count > 0 ? ": " + string.Join(", ", interesting) : "."));
+            " relevant(lil|VRMXT|MToon|Sample)=" + relevant.Count +
+            " loadedRelevant=" + loadedRelevant +
+            (relevant.Count > 0 ? ": " + string.Join(", ", relevant) : "."));
     }
 
     /// <summary>
@@ -541,6 +588,8 @@ public sealed class VrmxtPlugin : Plugin
             return;
         }
 
+        VrmxtManagerAsset.ReconcileAllDuplicateClaims(scene);
+
         foreach (var character in scene.GetAssets<CharacterAsset>())
         {
             BindCharacter(character);
@@ -621,9 +670,15 @@ public sealed class VrmxtPlugin : Plugin
 
         _bound.Remove(characterId);
 
-        if (bound.Character != null && bound.SourceWatchHandle != Guid.Empty)
+        if (bound.Character != null)
         {
-            Unwatch(bound.Character, bound.SourceWatchHandle);
+            var root = VrmxtCharacterApply.TryFindCharacterRoot(bound.Character);
+            VrmxtMaterialsStockShaders.Forget(root);
+
+            if (bound.SourceWatchHandle != Guid.Empty)
+            {
+                Unwatch(bound.Character, bound.SourceWatchHandle);
+            }
         }
 
         bound.DisposeApply();
@@ -655,10 +710,15 @@ public sealed class VrmxtPlugin : Plugin
             return;
         }
 
+        // Source changed — drop prior stock snapshot so CaptureIfAbsent re-clones
+        // fresh MToon (and so recycled instance IDs cannot restore the wrong avatar).
+        var root = VrmxtCharacterApply.TryFindCharacterRoot(character);
+        VrmxtMaterialsStockShaders.Forget(root);
+
         ApplyAsync(characterId, character, generation, deferMaterialsOverride: true).Forget();
     }
 
-    private async UniTaskVoid ApplyAsync(
+    private async UniTask ApplyAsync(
         Guid characterId,
         CharacterAsset character,
         int generation,
@@ -711,10 +771,13 @@ public sealed class VrmxtPlugin : Plugin
                     return;
                 }
 
+                ResolveFeatureFlags(characterId, out var applySprite, out var applyMats);
                 applyResult = VrmxtCharacterApply.Apply(
                     character,
                     bytes,
-                    deferMaterialsOverrideApply: deferMaterialsOverride);
+                    deferMaterialsOverrideApply: deferMaterialsOverride && applyMats,
+                    applySpriteParticle: applySprite,
+                    applyMaterialsOverride: applyMats);
                 if (applyResult != null)
                 {
                     break;
@@ -722,7 +785,7 @@ public sealed class VrmxtPlugin : Plugin
 
                 if (VrmxtCharacterApply.TryFindCharacterRoot(character) != null)
                 {
-                    // Root exists but attach failed — do not spin.
+                    // Root exists but attach failed or features cleared — do not spin.
                     break;
                 }
 
@@ -795,6 +858,30 @@ public sealed class VrmxtPlugin : Plugin
             SetApplyStatus("Failed to apply on '" + character.Name + "': " + e.Message);
             Log.UserError("VRMXT: failed to apply extensions on Character " + character.Name, e);
         }
+    }
+
+    private static void ResolveFeatureFlags(
+        Guid characterId,
+        out bool applySpriteParticle,
+        out bool applyMaterialsOverride)
+    {
+        applySpriteParticle = true;
+        applyMaterialsOverride = true;
+
+        var scene = Context.OpenedScene;
+        if (scene == null)
+        {
+            return;
+        }
+
+        if (!VrmxtManagerAsset.TryGetForCharacter(scene, characterId, out var settings) ||
+            settings == null)
+        {
+            return;
+        }
+
+        applySpriteParticle = settings.EnableSpriteParticle;
+        applyMaterialsOverride = settings.EnableMaterialsOverride;
     }
 
     private sealed class BoundCharacter
