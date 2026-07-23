@@ -211,10 +211,10 @@ public sealed class VrmxtManagerAsset : Asset
     [HiddenIf(nameof(HideVrmxtControls))]
     public void RefreshMaterials()
     {
-        RefreshMaterialsAsync(reApplyOverrides: true).Forget();
+        RefreshMaterialsAsync(reApplyOverrides: true, reattachFromFile: true).Forget();
     }
 
-    private async UniTask RefreshMaterialsAsync(bool reApplyOverrides)
+    private async UniTask RefreshMaterialsAsync(bool reApplyOverrides, bool reattachFromFile = true)
     {
         if (!IsAssignedVrm1Character())
         {
@@ -248,7 +248,8 @@ public sealed class VrmxtManagerAsset : Asset
         string gltfJsonForApply = null;
 
         // Recover ExtensionJson when load apply wiped/missed the store.
-        if (!StoreHasOverrideJson(store))
+        // Skip after intentional Clear — empty store must not reload from source .vrm.
+        if (reattachFromFile && !StoreHasOverrideJson(store))
         {
             if (!VrmxtCharacterSource.TryGetPersistentRelativePath(Character.Source, out var relativePath) ||
                 !Context.PersistentDataManager.HasFile(relativePath))
@@ -878,7 +879,8 @@ public sealed class VrmxtManagerAsset : Asset
             // Restore MToon/stock shaders snapped before first override apply (in-place mutate).
             var restored = VrmxtMaterialsStockShaders.Restore(root);
             var catalog = VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(Character, root, store);
-            RefreshMaterials();
+            // Do not re-attach/re-apply from source .vrm — that undoes Clear on patched files.
+            await RefreshMaterialsAsync(reApplyOverrides: false, reattachFromFile: false);
 
             SetStatus(
                 "Cleared override JSON + restored stock shaders: pairs=" + pairCount +
