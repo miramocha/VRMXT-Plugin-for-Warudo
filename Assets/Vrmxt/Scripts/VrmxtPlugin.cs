@@ -245,9 +245,19 @@ public sealed class VrmxtPlugin : Plugin
     /// </summary>
     public void RequestCharacterApply(CharacterAsset character, bool deferMaterialsOverride = false)
     {
+        RequestCharacterApplyAsync(character, deferMaterialsOverride).Forget();
+    }
+
+    /// <summary>
+    /// Awaitable re-apply so Manager can refresh the Materials list after the store exists.
+    /// </summary>
+    public UniTask RequestCharacterApplyAsync(
+        CharacterAsset character,
+        bool deferMaterialsOverride = false)
+    {
         if (!EnableVrmxt || character == null)
         {
-            return;
+            return UniTask.CompletedTask;
         }
 
         if (!_bound.ContainsKey(character.Id))
@@ -257,13 +267,13 @@ public sealed class VrmxtPlugin : Plugin
 
         if (!_bound.TryGetValue(character.Id, out var bound))
         {
-            return;
+            return UniTask.CompletedTask;
         }
 
         bound.ApplyGeneration++;
         var generation = bound.ApplyGeneration;
         bound.DisposeApply();
-        ApplyAsync(character.Id, character, generation, deferMaterialsOverride).Forget();
+        return ApplyAsync(character.Id, character, generation, deferMaterialsOverride);
     }
 
     /// <summary>
@@ -695,7 +705,7 @@ public sealed class VrmxtPlugin : Plugin
         ApplyAsync(characterId, character, generation, deferMaterialsOverride: true).Forget();
     }
 
-    private async UniTaskVoid ApplyAsync(
+    private async UniTask ApplyAsync(
         Guid characterId,
         CharacterAsset character,
         int generation,

@@ -464,8 +464,9 @@ namespace UniVRMXT.MaterialsOverride
 
         /// <summary>
         /// After a shader swap, drop stock-import textures that the override JSON does not
-        /// mention. Authoring omits null texture slots from <c>properties</c>; without this
-        /// pass, Unity keeps same-named slots (e.g. MToon <c>_MainTex</c> → lilToon).
+        /// mention — but only when the override claims texture ownership (texture
+        /// <c>properties</c> and/or texture <c>bindings</c>). When textures are omitted on
+        /// purpose (Character / Warudo Material Properties owns them), leave slots alone.
         /// </summary>
         private static void ClearUnlistedTextureProperties(
             Material material,
@@ -476,6 +477,11 @@ namespace UniVRMXT.MaterialsOverride
             JObject mtoon)
         {
             if (material == null || shader == null)
+            {
+                return;
+            }
+
+            if (!OverrideClaimsTextureOwnership(properties, bindings))
             {
                 return;
             }
@@ -499,6 +505,47 @@ namespace UniVRMXT.MaterialsOverride
 
                 material.SetTexture(name, null);
             }
+        }
+
+        private static bool OverrideClaimsTextureOwnership(
+            IReadOnlyList<VrmxtMaterialProperty> properties,
+            IReadOnlyList<VrmxtMaterialBinding> bindings)
+        {
+            if (properties != null)
+            {
+                for (var i = 0; i < properties.Count; i++)
+                {
+                    var property = properties[i];
+                    if (property != null &&
+                        string.Equals(
+                            property.Type,
+                            VrmxtMaterialsOverride.TargetTypeTexture,
+                            StringComparison.Ordinal))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (bindings == null)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < bindings.Count; i++)
+            {
+                var binding = bindings[i];
+                if (binding != null &&
+                    string.Equals(
+                        binding.TargetType,
+                        VrmxtMaterialsOverride.TargetTypeTexture,
+                        StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

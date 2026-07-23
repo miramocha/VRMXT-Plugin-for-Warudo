@@ -197,7 +197,8 @@ public static class VrmxtMaterialsShaderAuthoring
                 {
                     existingProvider = unity.Provider;
                     existingBindings = entry.Bindings;
-                    existingProperties = entry.Properties;
+                    existingProperties = VrmxtMaterialsOverrideAuthoring.WithoutTextureProperties(
+                        entry.Properties);
                     slotVariant = unity.Variant;
                     continue;
                 }
@@ -217,7 +218,8 @@ public static class VrmxtMaterialsShaderAuthoring
             var emptyUnity = emptyVariantUnity.Material as UnityMaterialOverride;
             existingProvider = emptyUnity?.Provider;
             existingBindings = emptyVariantUnity.Bindings;
-            existingProperties = emptyVariantUnity.Properties;
+            existingProperties = VrmxtMaterialsOverrideAuthoring.WithoutTextureProperties(
+                emptyVariantUnity.Properties);
             slotVariant = activeVariant;
             emptyVariantUnity = null;
         }

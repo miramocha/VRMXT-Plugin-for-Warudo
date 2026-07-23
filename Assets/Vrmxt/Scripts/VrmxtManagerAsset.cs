@@ -49,6 +49,9 @@ public sealed class VrmxtManagerAsset : Asset
 
     [DataInput]
     [Label("Materials")]
+    [Description(
+        "Filled from the Character. Use Refresh after load. Pick shaders then Apply. " +
+        "Add/remove rows are ignored on Apply/Export — Refresh rebuilds the list.")]
     public VrmxtMaterialShaderRow[] Materials = Array.Empty<VrmxtMaterialShaderRow>();
 
     [DataInput]
@@ -108,8 +111,15 @@ public sealed class VrmxtManagerAsset : Asset
             return;
         }
 
+        // Sync fill first (same as pre-export-fix path). Re-fill after plugin apply.
         RefreshMaterials();
-        RequestPluginApply(deferMaterialsOverride: false);
+        RefreshAfterPluginApplyAsync().Forget();
+    }
+
+    private async UniTaskVoid RefreshAfterPluginApplyAsync()
+    {
+        await RequestPluginApplyAsync(deferMaterialsOverride: false);
+        RefreshMaterials();
     }
 
     private void OnFeatureToggleChanged(bool from, bool to)
@@ -128,7 +138,7 @@ public sealed class VrmxtManagerAsset : Asset
 
     [Trigger]
     [Label("Refresh Materials")]
-    [Description("Rebuild the material list from the selected Character's VRMXT store and renderers.")]
+    [Description("Rebuild the material list from the Character store and renderers.")]
     public void RefreshMaterials()
     {
         if (Character == null || !Character.IsNonNullAndActive())
@@ -147,6 +157,11 @@ public sealed class VrmxtManagerAsset : Asset
         }
 
         var store = root.GetComponent<VrmxtMaterialsOverrideInstance>();
+        if (store != null && (store.Pairs == null || store.Pairs.Count == 0))
+        {
+            store.PopulatePairsFromRenderers();
+        }
+
         var rows = VrmxtMaterialsShaderAuthoring.CollectMaterialRows(root, store);
         var structured = new VrmxtMaterialShaderRow[rows.Count];
         for (var i = 0; i < rows.Count; i++)
@@ -162,6 +177,125 @@ public sealed class VrmxtManagerAsset : Asset
 
         SetDataInput(nameof(Materials), structured, broadcast: true);
         SetStatus("Loaded " + structured.Length + " material(s) from '" + Character.Name + "'.");
+    }
+
+    private static bool StoreHasOverrideJson(VrmxtMaterialsOverrideInstance store)
+    {
+        if (store?.Pairs == null)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            var pair = store.Pairs[i];
+            if (pair != null && !string.IsNullOrWhiteSpace(pair.ExtensionJson))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Build export store from live Apply state and/or Manager Materials rows.
+    /// Does not replace an authored live store with stock source-file JSON.
+    /// </summary>
+    private bool TryPrepareStoreForExport(
+        GameObject root,
+        string gltfJson,
+        out VrmxtMaterialsOverrideInstance store,
+        out string error)
+    {
+        store = root != null ? root.GetComponent<VrmxtMaterialsOverrideInstance>() : null;
+        error = null;
+
+        if (!StoreHasOverrideJson(store))
+        {
+            // Seed store from source file (or empty renderer pairs). Do not call this when
+            // live Apply already wrote ExtensionJson — SetPairs would wipe shaders.
+            if (!VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out store) ||
+                store == null)
+            {
+                error = "Failed to attach VRMXT materials store for export.";
+                return false;
+            }
+        }
+
+        var materials = Materials ?? Array.Empty<VrmxtMaterialShaderRow>();
+        var shaderRows = 0;
+        for (var i = 0; i < materials.Length; i++)
+        {
+            var row = materials[i];
+            if (row == null ||
+                string.IsNullOrWhiteSpace(row.MaterialName) ||
+                string.IsNullOrWhiteSpace(row.ShaderName))
+            {
+                continue;
+            }
+
+            if (!VrmxtMaterialsShaderAuthoring.TrySetShaderName(
+                    store,
+                    row.MaterialName,
+                    row.ShaderName,
+                    out var setError))
+            {
+                Debug.LogWarning("VRMXT: export shader upsert skipped: " + setError);
+                continue;
+            }
+
+            if (row.GltfMaterialIndex >= 0)
+            {
+                var pair = FindStorePair(store, row.MaterialName);
+                if (pair != null)
+                {
+                    pair.GltfMaterialIndex = row.GltfMaterialIndex;
+                }
+            }
+
+            shaderRows++;
+        }
+
+        if (!StoreHasOverrideJson(store))
+        {
+            error = shaderRows == 0
+                ? "No materials override entries to export. Set shaders and Apply first."
+                : "Failed to write shader overrides into the store for export.";
+            return false;
+        }
+
+        // Non-texture props from live Character mats; textures stay Warudo-owned.
+        VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(store, root);
+        return true;
+    }
+
+    private static VrmxtMaterialsOverridePair FindStorePair(
+        VrmxtMaterialsOverrideInstance store,
+        string materialName)
+    {
+        if (store?.Pairs == null || string.IsNullOrEmpty(materialName))
+        {
+            return null;
+        }
+
+        var key = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(materialName);
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            var pair = store.Pairs[i];
+            if (pair == null || string.IsNullOrEmpty(pair.MaterialName))
+            {
+                continue;
+            }
+
+            var existing = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(pair.MaterialName);
+            if (string.Equals(existing, key, StringComparison.Ordinal))
+            {
+                return pair;
+            }
+        }
+
+        return null;
     }
 
     [Trigger]
@@ -314,18 +448,23 @@ public sealed class VrmxtManagerAsset : Asset
 
     private void RequestPluginApply(bool deferMaterialsOverride)
     {
+        RequestPluginApplyAsync(deferMaterialsOverride).Forget();
+    }
+
+    private UniTask RequestPluginApplyAsync(bool deferMaterialsOverride)
+    {
         if (Character == null || !Character.IsNonNullAndActive())
         {
-            return;
+            return UniTask.CompletedTask;
         }
 
         var plugin = VrmxtPlugin.ActiveInstance;
         if (plugin == null)
         {
-            return;
+            return UniTask.CompletedTask;
         }
 
-        plugin.RequestCharacterApply(Character, deferMaterialsOverride);
+        return plugin.RequestCharacterApplyAsync(Character, deferMaterialsOverride);
     }
 
     private async UniTaskVoid ApplyShaderOverridesAsync()
@@ -435,11 +574,15 @@ public sealed class VrmxtManagerAsset : Asset
                 gltfJson,
                 pipeline,
                 resolveTexture);
+            // Snapshot non-texture props from live Character mats into the store (textures
+            // stay owned by Warudo Character Material Properties).
+            var snapped = VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(store, root);
             var catalog = VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(Character, root, store);
 
             SetStatus(
                 "Applied shaders: rows=" + changed + " live=" + applied +
-                " catalog=" + catalog + " errors=" + errors + " [" + Character.Name + "]");
+                " snapped=" + snapped + " catalog=" + catalog +
+                " errors=" + errors + " [" + Character.Name + "]");
         }
         catch (Exception e)
         {
@@ -593,10 +736,9 @@ public sealed class VrmxtManagerAsset : Asset
                 return;
             }
 
-            if (!VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out var store) ||
-                store == null)
+            if (!TryPrepareStoreForExport(root, gltfJson, out var store, out var prepareError))
             {
-                SetStatus("Failed to attach VRMXT materials store for export.");
+                SetStatus(prepareError);
                 return;
             }
 
