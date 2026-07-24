@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using UniVRMXT.Format;
 using UnityEngine;
+using UniVRMXT.Format;
 
 namespace UniVRMXT.MaterialsOverride
 {
@@ -91,6 +91,34 @@ namespace UniVRMXT.MaterialsOverride
         }
 
         /// <summary>
+        /// Reverse lookup: packed GLB texture instance → its import-time <c>textures[]</c> index.
+        /// </summary>
+        public bool TryGetGltfIndexForTexture(Texture texture, out int gltfIndex)
+        {
+            gltfIndex = -1;
+            if (texture == null)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < importedTextures.Count; i++)
+            {
+                var entry = importedTextures[i];
+                if (
+                    entry != null
+                    && entry.Texture != null
+                    && ReferenceEquals(entry.Texture, texture)
+                )
+                {
+                    gltfIndex = entry.GltfIndex;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Decode every texture index referenced by stored ExtensionJson (properties and
         /// MToon-sourced bindings) via <paramref name="resolveTexture"/> and keep the
         /// results for apply / export remapping. Pass <paramref name="gltfJson"/> so
@@ -99,7 +127,8 @@ namespace UniVRMXT.MaterialsOverride
         /// </summary>
         public void RememberTexturesFromPairs(
             Func<int, Texture> resolveTexture,
-            string gltfJson = null)
+            string gltfJson = null
+        )
         {
             if (resolveTexture == null)
             {
@@ -122,19 +151,26 @@ namespace UniVRMXT.MaterialsOverride
         private static void CollectTextureIndicesFromPair(
             VrmxtMaterialsOverridePair pair,
             JObject gltfRoot,
-            HashSet<int> indices)
+            HashSet<int> indices
+        )
         {
-            if (pair == null ||
-                string.IsNullOrEmpty(pair.ExtensionJson) ||
-                !VrmxtMaterialsOverride.TryParse(pair.ExtensionJson, out var extension))
+            if (
+                pair == null
+                || string.IsNullOrEmpty(pair.ExtensionJson)
+                || !VrmxtMaterialsOverride.TryParse(pair.ExtensionJson, out var extension)
+            )
             {
                 return;
             }
 
             JObject mtoon = null;
-            var hasMtoon = gltfRoot != null &&
-                VrmxtMaterialsOverrideApplier.TryFindSiblingMtoonForPair(
-                    gltfRoot, pair, out mtoon);
+            var hasMtoon =
+                gltfRoot != null
+                && VrmxtMaterialsOverrideApplier.TryFindSiblingMtoonForPair(
+                    gltfRoot,
+                    pair,
+                    out mtoon
+                );
 
             for (var i = 0; i < extension.Overrides.Count; i++)
             {
@@ -164,17 +200,25 @@ namespace UniVRMXT.MaterialsOverride
                 for (var b = 0; b < engineOverride.Bindings.Count; b++)
                 {
                     var binding = engineOverride.Bindings[b];
-                    if (binding == null ||
-                        !string.Equals(
+                    if (
+                        binding == null
+                        || !string.Equals(
                             binding.TargetType,
                             VrmxtMaterialsOverride.TargetTypeTexture,
-                            StringComparison.Ordinal))
+                            StringComparison.Ordinal
+                        )
+                    )
                     {
                         continue;
                     }
 
-                    if (VrmxtMaterialsOverrideApplier.TryGetMtoonBindingTextureIndex(
-                            binding.Source, mtoon, out var textureIndex))
+                    if (
+                        VrmxtMaterialsOverrideApplier.TryGetMtoonBindingTextureIndex(
+                            binding.Source,
+                            mtoon,
+                            out var textureIndex
+                        )
+                    )
                     {
                         indices.Add(textureIndex);
                     }
@@ -247,7 +291,8 @@ namespace UniVRMXT.MaterialsOverride
                 VrmxtMaterialsOverrideAuthoring.RestoreSourceMaterial(
                     gameObject,
                     pair.MaterialName,
-                    pair.SourceMaterial);
+                    pair.SourceMaterial
+                );
             }
 
             pair.OverrideMaterial = null;
@@ -329,8 +374,12 @@ namespace UniVRMXT.MaterialsOverride
                 }
 
                 Material resolved = null;
-                foreach (var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
-                             root, pair.MaterialName))
+                foreach (
+                    var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                        root,
+                        pair.MaterialName
+                    )
+                )
                 {
                     if (IsPreviewMaterial(material))
                     {
@@ -383,8 +432,12 @@ namespace UniVRMXT.MaterialsOverride
                         coveredNames.Add(baseName);
                     }
 
-                    foreach (var live in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
-                                 root, pair.MaterialName))
+                    foreach (
+                        var live in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                            root,
+                            pair.MaterialName
+                        )
+                    )
                     {
                         if (live != null)
                         {
@@ -431,10 +484,9 @@ namespace UniVRMXT.MaterialsOverride
 
                     coveredNames.Add(name);
                     coveredMaterials.Add(material);
-                    pairs.Add(new VrmxtMaterialsOverridePair(name, null)
-                    {
-                        SourceMaterial = material,
-                    });
+                    pairs.Add(
+                        new VrmxtMaterialsOverridePair(name, null) { SourceMaterial = material }
+                    );
                 }
             }
         }
@@ -457,8 +509,10 @@ namespace UniVRMXT.MaterialsOverride
                 return false;
             }
 
-            if (!int.TryParse(storeKey.Substring(hashIndex + 1), out var occurrence) ||
-                occurrence <= 0)
+            if (
+                !int.TryParse(storeKey.Substring(hashIndex + 1), out var occurrence)
+                || occurrence <= 0
+            )
             {
                 return false;
             }
@@ -488,8 +542,10 @@ namespace UniVRMXT.MaterialsOverride
             // Domain reload / Test Runner / asset refresh: skip Apply while compiling or
             // updating so DontSave preview mats are not created against half-ready shaders
             // (pink / "VRMXT shader" errors after scene restore). Re-run once settled.
-            if (UnityEditor.EditorApplication.isCompiling ||
-                UnityEditor.EditorApplication.isUpdating)
+            if (
+                UnityEditor.EditorApplication.isCompiling
+                || UnityEditor.EditorApplication.isUpdating
+            )
             {
                 ScheduleValidateFlush();
                 return;
@@ -522,8 +578,10 @@ namespace UniVRMXT.MaterialsOverride
                 return;
             }
 
-            if (UnityEditor.EditorApplication.isCompiling ||
-                UnityEditor.EditorApplication.isUpdating)
+            if (
+                UnityEditor.EditorApplication.isCompiling
+                || UnityEditor.EditorApplication.isUpdating
+            )
             {
                 ScheduleValidateFlush();
                 return;
@@ -565,16 +623,16 @@ namespace UniVRMXT.MaterialsOverride
         /// </summary>
         public int GltfMaterialIndex = -1;
 
-        public VrmxtMaterialsOverridePair()
-        {
-        }
+        public VrmxtMaterialsOverridePair() { }
 
         public VrmxtMaterialsOverridePair(string materialName, string extensionJson)
-            : this(materialName, extensionJson, -1)
-        {
-        }
+            : this(materialName, extensionJson, -1) { }
 
-        public VrmxtMaterialsOverridePair(string materialName, string extensionJson, int gltfMaterialIndex)
+        public VrmxtMaterialsOverridePair(
+            string materialName,
+            string extensionJson,
+            int gltfMaterialIndex
+        )
         {
             MaterialName = materialName;
             ExtensionJson = extensionJson;
@@ -595,9 +653,7 @@ namespace UniVRMXT.MaterialsOverride
         [SerializeField]
         private Texture texture;
 
-        public VrmxtImportedGltfTexture()
-        {
-        }
+        public VrmxtImportedGltfTexture() { }
 
         public VrmxtImportedGltfTexture(int gltfIndex, Texture texture)
         {
@@ -609,5 +665,4 @@ namespace UniVRMXT.MaterialsOverride
 
         public Texture Texture => texture;
     }
-
 }

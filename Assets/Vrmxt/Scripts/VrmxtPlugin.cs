@@ -20,7 +20,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.1.10",
+    Version = "0.1.11",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT",
     AssetTypes = new[] { typeof(VrmxtManagerAsset) }
@@ -119,8 +119,8 @@ public sealed class VrmxtPlugin : Plugin
     [Trigger]
     [Label("Dump materials debug")]
     [Description(
-        "Log live post-override renderer shaders vs Character.MaterialProperties catalog " +
-        "(detects Warudo UI stuck on VRM1/MToon props). Does not touch Character.Materials.")]
+        "Log JSON vs live vs remembered textures (Unity-comparable format) plus Warudo "
+            + "MaterialProperties catalog. Prefer VRMXT Manager dump for one Character.")]
     public void DumpMaterialsDebugNow()
     {
         var scene = Context.OpenedScene;
@@ -147,6 +147,7 @@ public sealed class VrmxtPlugin : Plugin
             }
 
             var store = root.GetComponent<VrmxtMaterialsOverrideInstance>();
+            VrmxtMaterialsOverrideDebug.Dump(root, store);
             VrmxtCharacterApply.DumpMaterialsOverrideDebug(character, root, store);
             dumped++;
         }

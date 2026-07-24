@@ -217,6 +217,7 @@ namespace UniVRMXT.MaterialsOverride
             }
 
             Material liveMaterial = null;
+            Material fallbackMaterial = null;
             var resolvedMaterial = false;
             var activeVariant = UnityOverrideSelector.RenderPipelineVariantToVariantString(
                 VrmxtMaterialsOverrideApplier.DetectActivePipeline());
@@ -260,11 +261,18 @@ namespace UniVRMXT.MaterialsOverride
                         if (!resolvedMaterial)
                         {
                             liveMaterial = ResolveTextureSourceMaterial(root, entry.MaterialName, instance);
+                            fallbackMaterial = ResolveTextureFallbackMaterial(
+                                entry.MaterialName,
+                                instance);
                             resolvedMaterial = true;
                         }
 
                         remapped = TryRemapTextureProperty(
-                            propertyObject, liveMaterial, registerSrgbTexture, out newIndex);
+                            propertyObject,
+                            liveMaterial,
+                            fallbackMaterial,
+                            registerSrgbTexture,
+                            out newIndex);
                     }
 
                     if (!remapped &&
@@ -405,9 +413,28 @@ namespace UniVRMXT.MaterialsOverride
             return ResolveFirstMaterial(root, materialName);
         }
 
+        /// <summary>
+        /// Stock / <c>SourceMaterial</c> for albedo slots missing on OverrideMaterial
+        /// (e.g. Poiyomi template with null <c>_MainTex</c>).
+        /// </summary>
+        private static Material ResolveTextureFallbackMaterial(
+            string materialName,
+            VrmxtMaterialsOverrideInstance instance)
+        {
+            if (instance != null &&
+                instance.TryGetPair(materialName, out var pair) &&
+                pair.SourceMaterial != null)
+            {
+                return pair.SourceMaterial;
+            }
+
+            return null;
+        }
+
         private static bool TryRemapTextureProperty(
             JObject propertyObject,
             Material liveMaterial,
+            Material fallbackMaterial,
             Func<Texture, bool, int> registerSrgbTexture,
             out int newIndex)
         {
@@ -420,15 +447,30 @@ namespace UniVRMXT.MaterialsOverride
             }
 
             var propertyName = nameToken.Value<string>();
-            if (string.IsNullOrEmpty(propertyName) ||
-                liveMaterial == null ||
-                !liveMaterial.HasProperty(propertyName))
+            if (string.IsNullOrEmpty(propertyName))
             {
                 return false;
             }
 
-            var texture = liveMaterial.GetTexture(propertyName);
+            var texture = GetTextureIfPresent(liveMaterial, propertyName);
+            if (texture == null)
+            {
+                texture = GetTextureIfPresent(fallbackMaterial, propertyName);
+            }
+
             return TryRegisterTexture(texture, registerSrgbTexture, out newIndex);
+        }
+
+        private static Texture GetTextureIfPresent(Material material, string propertyName)
+        {
+            if (material == null ||
+                string.IsNullOrEmpty(propertyName) ||
+                !material.HasProperty(propertyName))
+            {
+                return null;
+            }
+
+            return material.GetTexture(propertyName);
         }
 
         /// <summary>
