@@ -121,20 +121,9 @@ public class PoiyomiPassProbeAsset : Asset
                 // ignore
             }
 
-            // Some hosts expose instance mats only.
+            // Prefer sharedMaterials only — renderer.materials instantiates copies and can
+            // permanently replace shared slots with leaked instances.
             if (mats == null || mats.Length == 0)
-            {
-                try
-                {
-                    mats = renderer.materials;
-                }
-                catch
-                {
-                    continue;
-                }
-            }
-
-            if (mats == null)
             {
                 continue;
             }
