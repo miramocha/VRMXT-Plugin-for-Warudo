@@ -375,7 +375,9 @@ public static class VrmxtCharacterApply
             store,
             gltfJson,
             pipeline,
-            resolveTexture
+            resolveTexture,
+            null,
+            VrmxtMaterialsOverrideApplier.ShaderResolveProvider
         );
 
         if (applied > 0)

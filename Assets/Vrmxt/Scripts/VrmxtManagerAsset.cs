@@ -364,12 +364,24 @@ public sealed class VrmxtManagerAsset : Asset
                     VrmxtMaterialsStockShaders.CaptureIfAbsent(root);
                     Func<int, Texture> resolveTexture = index =>
                         store.TryGetImportedTexture(index, out var texture) ? texture : null;
+                    // Explicit provider — uMod shaders stay null under Shader.Find.
+                    var resolveShader = VrmxtMaterialsOverrideApplier.ShaderResolveProvider;
+                    if (resolveShader == null)
+                    {
+                        Debug.LogWarning(
+                            "VRMXT: Refresh re-apply — ShaderResolveProvider is null; " +
+                            "uMod shaders may fail Shader.Find."
+                        );
+                    }
+
                     applied = VrmxtMaterialsOverrideApplier.Apply(
                         root,
                         store,
                         gltfJsonForApply,
                         VrmxtCharacterApply.DetectActivePipelineForWarudo(),
-                        resolveTexture
+                        resolveTexture,
+                        null,
+                        resolveShader
                     );
                     if (applied > 0)
                     {
@@ -379,6 +391,24 @@ public sealed class VrmxtManagerAsset : Asset
                             store
                         );
                     }
+                    else
+                    {
+                        Debug.LogWarning(
+                            "VRMXT: Refresh re-apply returned 0 (overrides=" +
+                            CountOverrideJson(store) +
+                            ", rememberedTextures=" +
+                            (store.ImportedTextures?.Count ?? 0) +
+                            ", resolveShader=" +
+                            (resolveShader != null ? "set" : "null") +
+                            "). Live mats may already be overridden; check shader resolve warnings."
+                        );
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning(
+                        "VRMXT: Refresh skipped re-apply — could not read glTF JSON from Character Source."
+                    );
                 }
             }
             catch (Exception e)
@@ -897,7 +927,9 @@ public sealed class VrmxtManagerAsset : Asset
                 store,
                 gltfJson,
                 pipeline,
-                resolveTexture
+                resolveTexture,
+                null,
+                VrmxtMaterialsOverrideApplier.ShaderResolveProvider
             );
             // Snapshot live props; keep packed GLB textures, omit new unpackaged maps.
             var snapped = VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(

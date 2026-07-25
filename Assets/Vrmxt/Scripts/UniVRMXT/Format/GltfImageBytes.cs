@@ -9,6 +9,13 @@ namespace UniVRMXT.Format
     /// </summary>
     public static class GltfImageBytes
     {
+        // glTF 2.0 sampler enums (Khronos).
+        public const int WrapRepeat = 10497;
+        public const int WrapClampToEdge = 33071;
+        public const int WrapMirroredRepeat = 33648;
+        public const int FilterNearest = 9728;
+        public const int FilterLinear = 9729;
+
         public static bool TryGetTextureImage(
             string gltfJson,
             byte[] binChunk,
@@ -31,9 +38,7 @@ namespace UniVRMXT.Format
                     return false;
                 }
 
-                if (!TryGetArray(root, "textures", out var textures) ||
-                    textureIndex >= textures.Count ||
-                    textures[textureIndex] is not JObject textureObject)
+                if (!TryGetTextureObject(root, textureIndex, out var textureObject))
                 {
                     return false;
                 }
@@ -82,6 +87,93 @@ namespace UniVRMXT.Format
             {
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Read glTF sampler wrap/filter for <c>textures[i]</c>.
+        /// When sampler is omitted or empty, defaults match the glTF 2.0 spec
+        /// (<c>wrapS</c>/<c>wrapT</c> = <see cref="WrapRepeat"/>, filters = linear).
+        /// </summary>
+        public static bool TryGetTextureSampler(
+            string gltfJson,
+            int textureIndex,
+            out int wrapS,
+            out int wrapT,
+            out int magFilter,
+            out int minFilter)
+        {
+            // glTF 2.0 defaults when sampler / fields are omitted.
+            wrapS = WrapRepeat;
+            wrapT = WrapRepeat;
+            magFilter = FilterLinear;
+            minFilter = FilterLinear;
+            if (string.IsNullOrWhiteSpace(gltfJson) || textureIndex < 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                var root = JToken.Parse(gltfJson) as JObject;
+                if (root == null ||
+                    !TryGetTextureObject(root, textureIndex, out var textureObject))
+                {
+                    return false;
+                }
+
+                if (!TryGetInt(textureObject, "sampler", out var samplerIndex) ||
+                    samplerIndex < 0 ||
+                    !TryGetArray(root, "samplers", out var samplers) ||
+                    samplerIndex >= samplers.Count ||
+                    samplers[samplerIndex] is not JObject samplerObject)
+                {
+                    // textures[i].sampler omitted → default sampler (repeat + linear).
+                    return true;
+                }
+
+                if (TryGetInt(samplerObject, "wrapS", out var s))
+                {
+                    wrapS = s;
+                }
+
+                if (TryGetInt(samplerObject, "wrapT", out var t))
+                {
+                    wrapT = t;
+                }
+
+                if (TryGetInt(samplerObject, "magFilter", out var mag))
+                {
+                    magFilter = mag;
+                }
+
+                if (TryGetInt(samplerObject, "minFilter", out var min))
+                {
+                    minFilter = min;
+                }
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryGetTextureObject(
+            JObject root,
+            int textureIndex,
+            out JObject textureObject)
+        {
+            textureObject = null;
+            if (!TryGetArray(root, "textures", out var textures) ||
+                textureIndex >= textures.Count ||
+                textures[textureIndex] is not JObject found)
+            {
+                return false;
+            }
+
+            textureObject = found;
+            return true;
         }
 
         private static bool TryReadBufferView(

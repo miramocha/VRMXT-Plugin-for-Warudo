@@ -12,7 +12,11 @@ using Warudo.Core.Plugins;
     Version = "1.0.0",
     Author = "Mira",
     SupportUrl = "https://docs.warudo.app",
-    AssetTypes = new[] { typeof(TestCookieClickerAsset) },
+    AssetTypes = new[]
+    {
+        typeof(TestCookieClickerAsset),
+        typeof(PoiyomiPassProbeAsset),
+    },
     NodeTypes = new[] { typeof(TestHelloWorldNode) }
 )]
 public class TestHelloWorldPlugin : Plugin
