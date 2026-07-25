@@ -351,6 +351,15 @@ namespace UniVRMXT.Format
             if (string.Equals(property.Type, TargetTypeTexture, StringComparison.Ordinal))
             {
                 obj["texture"] = property.TextureIndex ?? 0;
+                // Optional Unity texture ST: [scale.x, scale.y, offset.x, offset.y].
+                // Omitted when identity so older files and default tiling stay compact.
+                if (property.VectorValue != null &&
+                    property.VectorValue.Count >= 4 &&
+                    !IsIdentityTextureTransform(property.VectorValue))
+                {
+                    obj["value"] = ToJArray(property.VectorValue);
+                }
+
                 return obj;
             }
 
@@ -735,7 +744,29 @@ namespace UniVRMXT.Format
                     return false;
                 }
 
-                property = new VrmxtMaterialProperty(name, type, null, null, null, textureIndex);
+                IReadOnlyList<float> transform = null;
+                if (TryGetProperty(propertyObject, "value", out var transformToken) &&
+                    transformToken.Type == JTokenType.Array)
+                {
+                    var values = new List<float>();
+                    foreach (var item in (JArray)transformToken)
+                    {
+                        if (!TryGetDouble(item, out var number) || !IsFinite(number))
+                        {
+                            values = null;
+                            break;
+                        }
+
+                        values.Add((float)number);
+                    }
+
+                    if (values != null && values.Count >= 2)
+                    {
+                        transform = values;
+                    }
+                }
+
+                property = new VrmxtMaterialProperty(name, type, null, transform, null, textureIndex);
                 return true;
             }
 
@@ -790,6 +821,21 @@ namespace UniVRMXT.Format
 
             property = new VrmxtMaterialProperty(name, type, (float)scalar, null, null, null);
             return true;
+        }
+
+        private static bool IsIdentityTextureTransform(IReadOnlyList<float> values)
+        {
+            return values != null &&
+                values.Count >= 4 &&
+                NearlyEqual(values[0], 1f) &&
+                NearlyEqual(values[1], 1f) &&
+                NearlyEqual(values[2], 0f) &&
+                NearlyEqual(values[3], 0f);
+        }
+
+        private static bool NearlyEqual(float a, float b)
+        {
+            return Math.Abs(a - b) <= 1e-5f;
         }
 
         private static bool TryGetProperty(JObject parent, string propertyName, out JToken token)

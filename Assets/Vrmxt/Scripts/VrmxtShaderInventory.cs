@@ -14,6 +14,33 @@ public static class VrmxtShaderInventory
     public static Func<IEnumerable<string>> ExtraNamesProvider { get; set; }
 
     /// <summary>
+    /// Poiyomi alt shaders deferred to a separate Warudo plugin (not in Lite/Full Toon SKU).
+    /// Keep out of Manager shader autocomplete even if an old mod still loads them.
+    /// </summary>
+    private static bool IsDeferredPoiyomiAltShader(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        // Lil Fur / Lil Fur Two Pass (Toon or Pro).
+        if (name.IndexOf("Lil Fur", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return true;
+        }
+
+        // World variant (not main Toon).
+        if (name.IndexOf("Poiyomi Toon World", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            name.IndexOf("Poiyomi Pro World", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Names suitable for override shader dropdown: loaded relevant shaders + extras.
     /// Sorted ordinal. Never null.
     /// </summary>
@@ -28,7 +55,9 @@ public static class VrmxtShaderInventory
             {
                 foreach (var name in extras())
                 {
-                    if (!string.IsNullOrEmpty(name))
+                    if (!string.IsNullOrEmpty(name) &&
+                        IsRelevantShaderName(name) &&
+                        !IsDeferredPoiyomiAltShader(name))
                     {
                         names.Add(name);
                     }
@@ -61,7 +90,8 @@ public static class VrmxtShaderInventory
                     continue;
                 }
 
-                if (IsRelevantShaderName(shader.name))
+                if (IsRelevantShaderName(shader.name) &&
+                    !IsDeferredPoiyomiAltShader(shader.name))
                 {
                     names.Add(shader.name);
                 }

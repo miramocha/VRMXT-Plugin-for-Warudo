@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Rendering;
 using UniVRMXT.Format;
 using UniVRMXT.MaterialsOverride;
 using UniVRMXT.Vfx;
-using UnityEngine;
-using UnityEngine.Rendering;
 using Warudo.Core.Utils;
 using Warudo.Plugins.Core.Assets;
 using Warudo.Plugins.Core.Assets.Character;
@@ -60,7 +60,8 @@ public static class VrmxtCharacterApply
         byte[] glbBytes,
         bool deferMaterialsOverrideApply = false,
         bool applySpriteParticle = true,
-        bool applyMaterialsOverride = true)
+        bool applyMaterialsOverride = true
+    )
     {
         if (character == null || !character.IsNonNullAndActive())
         {
@@ -101,7 +102,8 @@ public static class VrmxtCharacterApply
                 root,
                 glbBytes,
                 result,
-                runApply: !deferMaterialsOverrideApply);
+                runApply: !deferMaterialsOverrideApply
+            );
         }
         else
         {
@@ -125,7 +127,8 @@ public static class VrmxtCharacterApply
     public static int ApplyMaterialsOverride(
         CharacterAsset character,
         byte[] glbBytes,
-        Result result)
+        Result result
+    )
     {
         if (character == null || !character.IsNonNullAndActive() || result == null)
         {
@@ -145,33 +148,45 @@ public static class VrmxtCharacterApply
         CharacterAsset character,
         GameObject root,
         byte[] glbBytes,
-        Result result)
+        Result result
+    )
     {
         var resolveNode = CreateNodeResolver(root, glbBytes);
         if (resolveNode == null)
         {
-            Debug.Log("VRMXT: could not resolve glTF nodes for Character '" + character.Name + "'.");
+            Debug.Log(
+                "VRMXT: could not resolve glTF nodes for Character '" + character.Name + "'."
+            );
             return false;
         }
 
-        if (!VrmxtVfxRuntime.TryAttachFromGlb(
+        if (
+            !VrmxtVfxRuntime.TryAttachFromGlb(
                 root,
                 glbBytes,
                 resolveNode,
                 out var instance,
-                out var textures))
+                out var textures
+            )
+        )
         {
             Debug.Log(
-                "VRMXT: no VRMXT_sprite_particle attach on Character '" + character.Name +
-                "' (missing extension, parse fail, or all emitters skipped).");
+                "VRMXT: no VRMXT_sprite_particle attach on Character '"
+                    + character.Name
+                    + "' (missing extension, parse fail, or all emitters skipped)."
+            );
             return false;
         }
 
         if (instance.Emitters == null || instance.Emitters.Count == 0)
         {
             Debug.Log(
-                "VRMXT: VRMXT_sprite_particle present but 0 emitters resolved on '" + character.Name +
-                "' (node name mismatch vs scene hierarchy?). Root='" + root.name + "'.");
+                "VRMXT: VRMXT_sprite_particle present but 0 emitters resolved on '"
+                    + character.Name
+                    + "' (node name mismatch vs scene hierarchy?). Root='"
+                    + root.name
+                    + "'."
+            );
             Object.Destroy(instance);
             textures?.Dispose();
             return false;
@@ -191,8 +206,16 @@ public static class VrmxtCharacterApply
 
         var particleCount = instance.ParticleSystems != null ? instance.ParticleSystems.Count : 0;
         Debug.Log(
-            "VRMXT: attached VFX on Character '" + character.Name + "' root='" + root.name +
-            "' emitters=" + instance.Emitters.Count + " particles=" + particleCount + ".");
+            "VRMXT: attached VFX on Character '"
+                + character.Name
+                + "' root='"
+                + root.name
+                + "' emitters="
+                + instance.Emitters.Count
+                + " particles="
+                + particleCount
+                + "."
+        );
 
         result.VfxInstance = instance;
         result.VfxTextures = textures;
@@ -204,7 +227,8 @@ public static class VrmxtCharacterApply
         GameObject root,
         byte[] glbBytes,
         Result result,
-        bool runApply)
+        bool runApply
+    )
     {
         string gltfJson = result.VfxTextures != null ? result.VfxTextures.Json : null;
         if (string.IsNullOrEmpty(gltfJson) && !GlbChunks.TryExtractJson(glbBytes, out gltfJson))
@@ -212,8 +236,10 @@ public static class VrmxtCharacterApply
             return false;
         }
 
-        if (!VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out var store) ||
-            store == null)
+        if (
+            !VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out var store)
+            || store == null
+        )
         {
             return false;
         }
@@ -254,8 +280,12 @@ public static class VrmxtCharacterApply
             // Snapshot stock (MToon) before deferred apply mutates in place.
             VrmxtMaterialsStockShaders.CaptureIfAbsent(root);
             Debug.Log(
-                "VRMXT: materials override prepared (deferred apply) on Character '" +
-                character.Name + "' root='" + root.name + "'.");
+                "VRMXT: materials override prepared (deferred apply) on Character '"
+                    + character.Name
+                    + "' root='"
+                    + root.name
+                    + "'."
+            );
             return true;
         }
 
@@ -266,14 +296,17 @@ public static class VrmxtCharacterApply
             result,
             gltfJson,
             store,
-            resolveTexture);
+            resolveTexture
+        );
         // Keep store even when applied==0 (missing shader / name miss). Wiping it
         // dropped ExtensionJson so Manager Refresh only showed stock MToon.
         if (applied == 0)
         {
             Debug.LogWarning(
-                "VRMXT: materials override store kept on '" + character.Name +
-                "' but 0 slots applied — check shader inventory / material names.");
+                "VRMXT: materials override store kept on '"
+                    + character.Name
+                    + "' but 0 slots applied — check shader inventory / material names."
+            );
         }
 
         return true;
@@ -283,7 +316,8 @@ public static class VrmxtCharacterApply
         CharacterAsset character,
         GameObject root,
         byte[] glbBytes,
-        Result result)
+        Result result
+    )
     {
         var store = result.MaterialsOverride;
         if (store == null)
@@ -313,7 +347,8 @@ public static class VrmxtCharacterApply
             result,
             gltfJson,
             store,
-            resolveTexture);
+            resolveTexture
+        );
     }
 
     private static int RunMaterialsOverrideApply(
@@ -323,7 +358,8 @@ public static class VrmxtCharacterApply
         Result result,
         string gltfJson,
         VrmxtMaterialsOverrideInstance store,
-        Func<int, Texture> resolveTexture)
+        Func<int, Texture> resolveTexture
+    )
     {
         if (store == null || string.IsNullOrEmpty(gltfJson))
         {
@@ -339,29 +375,191 @@ public static class VrmxtCharacterApply
             store,
             gltfJson,
             pipeline,
-            resolveTexture);
+            resolveTexture,
+            null,
+            VrmxtMaterialsOverrideApplier.ShaderResolveProvider
+        );
 
         if (applied > 0)
         {
             var catalogRefreshed = RefreshMaterialPropertiesCatalog(character, root, store);
             Debug.Log(
-                "VRMXT: materials override on Character '" + character.Name +
-                "' root='" + root.name + "' applied=" + applied +
-                " catalogRefreshed=" + catalogRefreshed +
-                " pipeline=" + pipeline + ".");
+                "VRMXT: materials override on Character '"
+                    + character.Name
+                    + "' root='"
+                    + root.name
+                    + "' applied="
+                    + applied
+                    + " catalogRefreshed="
+                    + catalogRefreshed
+                    + " pipeline="
+                    + pipeline
+                    + "."
+            );
         }
         else
         {
             var wanted = CollectWantedUnityShaderNames(store);
             Debug.LogWarning(
-                "VRMXT: materials override attached on '" + character.Name +
-                "' but 0 unity slots applied (missing variant/shader or stock-only)." +
-                " pipeline=" + pipeline +
-                " wantedShaders=[" + string.Join(", ", wanted) + "]." +
-                " Check console for 'VRMXT: shader inventory' and lilToon warm logs.");
+                "VRMXT: materials override attached on '"
+                    + character.Name
+                    + "' but 0 unity slots applied (missing variant/shader or stock-only)."
+                    + " pipeline="
+                    + pipeline
+                    + " wantedShaders=["
+                    + string.Join(", ", wanted)
+                    + "]."
+                    + " Check console for 'VRMXT: shader inventory' and lilToon warm logs."
+            );
         }
 
+        // Always dump visibility health after apply (Poiyomi missing _MainTex / black
+        // _Color / cleared stock maps are the usual "invisible override" causes).
+        LogMaterialsOverrideApplyHealth(character, root, store, applied, pipeline);
+
         return applied;
+    }
+
+    /// <summary>
+    /// Compact post-apply visibility check. Logs one line per override pair plus a
+    /// summary warning when albedo/main map is missing or tint is near-black.
+    /// </summary>
+    private static void LogMaterialsOverrideApplyHealth(
+        CharacterAsset character,
+        GameObject root,
+        VrmxtMaterialsOverrideInstance store,
+        int applied,
+        RenderPipelineVariant pipeline
+    )
+    {
+        if (store?.Pairs == null || root == null)
+        {
+            return;
+        }
+
+        var riskCount = 0;
+        var remembered =
+            store.ImportedTextures != null ? store.ImportedTextures.Count : 0;
+        Debug.Log(
+            "VRMXT: materials override health '"
+                + (character != null ? character.Name : "?")
+                + "' applied="
+                + applied
+                + " pipeline="
+                + pipeline
+                + " rememberedTextures="
+                + remembered
+                + "."
+        );
+
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            var pair = store.Pairs[i];
+            if (
+                pair == null
+                || string.IsNullOrEmpty(pair.MaterialName)
+                || string.IsNullOrEmpty(pair.ExtensionJson)
+            )
+            {
+                continue;
+            }
+
+            SummarizeOverrideJson(
+                pair.ExtensionJson,
+                out var shaderId,
+                out var variant,
+                out var propCount,
+                out var texPropCount,
+                out var bindingCount,
+                out var jsonHasMainTex,
+                out var jsonColor,
+                out var texNames
+            );
+
+            var foundLive = false;
+            foreach (
+                var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                    root,
+                    pair.MaterialName
+                )
+            )
+            {
+                if (material == null)
+                {
+                    continue;
+                }
+
+                foundLive = true;
+                DescribeLiveMaterialHealth(
+                    material,
+                    out var liveShader,
+                    out var mainTexName,
+                    out var mainTex,
+                    out var color,
+                    out var risks
+                );
+
+                var unresolved = CountUnresolvedOverrideTextures(pair, store);
+                Debug.Log(
+                    "VRMXT: override health store='"
+                        + pair.MaterialName
+                        + "' jsonShader='"
+                        + shaderId
+                        + "' variant="
+                        + variant
+                        + " props="
+                        + propCount
+                        + " texProps="
+                        + texPropCount
+                        + " bindings="
+                        + bindingCount
+                        + " jsonHasMainTex="
+                        + jsonHasMainTex
+                        + " jsonColor="
+                        + FormatColor(jsonColor)
+                        + " texNames=["
+                        + string.Join(",", texNames)
+                        + "] liveShader='"
+                        + liveShader
+                        + "' liveMain="
+                        + (mainTex != null ? mainTexName + "='" + mainTex.name + "'" : mainTexName + "=null")
+                        + " liveColor="
+                        + FormatColor(color)
+                        + " unresolvedTex="
+                        + unresolved
+                        + (risks.Count > 0 ? " RISKS=[" + string.Join(", ", risks) + "]" : "")
+                        + "."
+                );
+
+                if (risks.Count > 0)
+                {
+                    riskCount++;
+                }
+            }
+
+            if (!foundLive)
+            {
+                riskCount++;
+                Debug.LogWarning(
+                    "VRMXT: override health store='"
+                        + pair.MaterialName
+                        + "' live=(none) — name mismatch vs renderers?"
+                );
+            }
+        }
+
+        if (riskCount > 0)
+        {
+            Debug.LogWarning(
+                "VRMXT: materials override visibility risks on '"
+                    + (character != null ? character.Name : "?")
+                    + "' ("
+                    + riskCount
+                    + " pair(s)). Common: TestPoi/_override mat has null _MainTex but "
+                    + "ships default LUT textures → ClearUnlisted wipes stock MToon "
+                    + "_MainTex; black _Color; shader unresolved. Use Dump materials debug."
+            );
+        }
     }
 
     /// <summary>
@@ -375,7 +573,8 @@ public static class VrmxtCharacterApply
     public static int RefreshMaterialPropertiesCatalog(
         CharacterAsset character,
         GameObject root,
-        VrmxtMaterialsOverrideInstance store)
+        VrmxtMaterialsOverrideInstance store
+    )
     {
         if (character == null || root == null || store?.Pairs == null)
         {
@@ -392,17 +591,22 @@ public static class VrmxtCharacterApply
         for (var i = 0; i < store.Pairs.Count; i++)
         {
             var pair = store.Pairs[i];
-            if (pair == null ||
-                string.IsNullOrEmpty(pair.MaterialName) ||
-                string.IsNullOrEmpty(pair.ExtensionJson))
+            if (
+                pair == null
+                || string.IsNullOrEmpty(pair.MaterialName)
+                || string.IsNullOrEmpty(pair.ExtensionJson)
+            )
             {
                 continue;
             }
 
             Material live = null;
-            foreach (var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
-                         root,
-                         pair.MaterialName))
+            foreach (
+                var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                    root,
+                    pair.MaterialName
+                )
+            )
             {
                 if (material != null && material.shader != null)
                 {
@@ -425,7 +629,8 @@ public static class VrmxtCharacterApply
             var catalogKeys = ResolveMaterialPropertiesCatalogKeys(
                 catalog,
                 pair.MaterialName,
-                live.name);
+                live.name
+            );
             for (var k = 0; k < catalogKeys.Count; k++)
             {
                 var catalogKey = catalogKeys[k];
@@ -435,9 +640,7 @@ public static class VrmxtCharacterApply
                 }
 
                 // Each key needs its own list instance — Warudo may mutate entries.
-                catalog[catalogKey] = k == 0
-                    ? props
-                    : new List<ShaderProperty>(props);
+                catalog[catalogKey] = k == 0 ? props : new List<ShaderProperty>(props);
                 refreshed++;
             }
         }
@@ -462,32 +665,29 @@ public static class VrmxtCharacterApply
         var count = shader.GetPropertyCount();
         for (var i = 0; i < count; i++)
         {
-            if ((shader.GetPropertyFlags(i) & ShaderPropertyFlags.HideInInspector) != 0)
-            {
-                continue;
-            }
-
+            // Include HideInInspector — Poiyomi parks UV pans / feature toggles there.
+            // Warudo Material Properties needs those names to edit scroll/glitter after apply.
             var name = shader.GetPropertyName(i);
             if (string.IsNullOrEmpty(name))
             {
                 continue;
             }
 
-            if (!TryMapMaterialPropertyType(
-                    shader.GetPropertyType(i),
-                    out var propertyType))
+            if (!TryMapMaterialPropertyType(shader.GetPropertyType(i), out var propertyType))
             {
                 continue;
             }
 
-            properties.Add(new ShaderProperty
-            {
-                Shader = shader.name,
-                Name = name,
-                Description = shader.GetPropertyDescription(i),
-                Type = propertyType,
-                Attributes = new List<string>(shader.GetPropertyAttributes(i)),
-            });
+            properties.Add(
+                new ShaderProperty
+                {
+                    Shader = shader.name,
+                    Name = name,
+                    Description = shader.GetPropertyDescription(i),
+                    Type = propertyType,
+                    Attributes = new List<string>(shader.GetPropertyAttributes(i)),
+                }
+            );
         }
 
         return properties;
@@ -495,7 +695,8 @@ public static class VrmxtCharacterApply
 
     private static bool TryMapMaterialPropertyType(
         ShaderPropertyType shaderType,
-        out MaterialPropertyType propertyType)
+        out MaterialPropertyType propertyType
+    )
     {
         switch (shaderType)
         {
@@ -530,13 +731,12 @@ public static class VrmxtCharacterApply
     private static List<string> ResolveMaterialPropertiesCatalogKeys(
         Dictionary<string, List<ShaderProperty>> catalog,
         string storeKey,
-        string liveName)
+        string liveName
+    )
     {
         var keys = new List<string>();
-        var storeStripped =
-            VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(storeKey);
-        var liveStripped =
-            VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(liveName);
+        var storeStripped = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(storeKey);
+        var liveStripped = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(liveName);
 
         foreach (var key in catalog.Keys)
         {
@@ -545,8 +745,10 @@ public static class VrmxtCharacterApply
                 continue;
             }
 
-            if (string.Equals(key, liveName, StringComparison.Ordinal) ||
-                string.Equals(key, storeKey, StringComparison.Ordinal))
+            if (
+                string.Equals(key, liveName, StringComparison.Ordinal)
+                || string.Equals(key, storeKey, StringComparison.Ordinal)
+            )
             {
                 if (!keys.Contains(key))
                 {
@@ -562,10 +764,11 @@ public static class VrmxtCharacterApply
                 continue;
             }
 
-            var keyStripped =
-                VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(key);
-            if (string.Equals(keyStripped, liveStripped, StringComparison.Ordinal) ||
-                string.Equals(keyStripped, storeStripped, StringComparison.Ordinal))
+            var keyStripped = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(key);
+            if (
+                string.Equals(keyStripped, liveStripped, StringComparison.Ordinal)
+                || string.Equals(keyStripped, storeStripped, StringComparison.Ordinal)
+            )
             {
                 if (!keys.Contains(key))
                 {
@@ -601,16 +804,19 @@ public static class VrmxtCharacterApply
     public static void DumpMaterialsOverrideDebug(
         CharacterAsset character,
         GameObject root,
-        VrmxtMaterialsOverrideInstance store)
+        VrmxtMaterialsOverrideInstance store
+    )
     {
         if (character == null || root == null)
         {
             return;
         }
 
-        var sb = new System.Text.StringBuilder(2048);
+        var sb = new System.Text.StringBuilder(4096);
         sb.Append("VRMXT materials debug [").Append(character.Name).Append("]\n");
 
+        DumpOverrideJsonSummary(sb, store);
+        DumpImportedTextureResolve(sb, store);
         DumpLiveOverrideMaterials(sb, root, store);
         DumpWarudoMaterialPropertiesCatalog(sb, character, store);
         DumpWarudoLastMaterialProperties(sb, character);
@@ -618,10 +824,129 @@ public static class VrmxtCharacterApply
         Debug.Log(sb.ToString());
     }
 
+    private static void DumpOverrideJsonSummary(
+        System.Text.StringBuilder sb,
+        VrmxtMaterialsOverrideInstance store
+    )
+    {
+        sb.AppendLine("--- override JSON (store) ---");
+        if (store?.Pairs == null)
+        {
+            sb.AppendLine("(no store pairs)");
+            return;
+        }
+
+        var any = false;
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            var pair = store.Pairs[i];
+            if (
+                pair == null
+                || string.IsNullOrEmpty(pair.MaterialName)
+                || string.IsNullOrEmpty(pair.ExtensionJson)
+            )
+            {
+                continue;
+            }
+
+            any = true;
+            SummarizeOverrideJson(
+                pair.ExtensionJson,
+                out var shaderId,
+                out var variant,
+                out var propCount,
+                out var texPropCount,
+                out var bindingCount,
+                out var jsonHasMainTex,
+                out var jsonColor,
+                out var texNames
+            );
+            sb.Append("  store='")
+                .Append(pair.MaterialName)
+                .Append("' shader='")
+                .Append(shaderId)
+                .Append("' variant=")
+                .Append(variant)
+                .Append(" props=")
+                .Append(propCount)
+                .Append(" texProps=")
+                .Append(texPropCount)
+                .Append(" bindings=")
+                .Append(bindingCount)
+                .Append(" hasMainTex=")
+                .Append(jsonHasMainTex)
+                .Append(" _Color=")
+                .Append(FormatColor(jsonColor))
+                .Append(" tex=[")
+                .Append(string.Join(",", texNames))
+                .Append("]\n");
+
+            if (texPropCount > 0 && !jsonHasMainTex)
+            {
+                sb.Append(
+                    "    RISK: texture ownership claimed without _MainTex/_BaseMap — "
+                        + "apply clears stock MToon albedo.\n"
+                );
+            }
+
+            if (jsonColor.HasValue && IsNearBlack(jsonColor.Value))
+            {
+                sb.Append("    RISK: JSON _Color near-black → mesh may look invisible.\n");
+            }
+        }
+
+        if (!any)
+        {
+            sb.AppendLine("(no override JSON pairs)");
+        }
+    }
+
+    private static void DumpImportedTextureResolve(
+        System.Text.StringBuilder sb,
+        VrmxtMaterialsOverrideInstance store
+    )
+    {
+        sb.AppendLine("--- remembered glTF textures (override indices) ---");
+        if (store?.Pairs == null)
+        {
+            sb.AppendLine("(no store)");
+            return;
+        }
+
+        var indices = new SortedSet<int>();
+        for (var i = 0; i < store.Pairs.Count; i++)
+        {
+            var pair = store.Pairs[i];
+            if (pair == null || string.IsNullOrEmpty(pair.ExtensionJson))
+            {
+                continue;
+            }
+
+            CollectOverrideTextureIndices(pair.ExtensionJson, indices);
+        }
+
+        if (indices.Count == 0)
+        {
+            sb.AppendLine("(no texture indices in override JSON)");
+            return;
+        }
+
+        foreach (var index in indices)
+        {
+            var ok = store.TryGetImportedTexture(index, out var texture) && texture != null;
+            sb.Append("  textures[")
+                .Append(index)
+                .Append("]=")
+                .Append(ok ? "'" + texture.name + "'" : "UNRESOLVED")
+                .Append('\n');
+        }
+    }
+
     private static void DumpLiveOverrideMaterials(
         System.Text.StringBuilder sb,
         GameObject root,
-        VrmxtMaterialsOverrideInstance store)
+        VrmxtMaterialsOverrideInstance store
+    )
     {
         sb.AppendLine("--- live renderers (post-apply) ---");
         if (store?.Pairs == null)
@@ -634,18 +959,23 @@ public static class VrmxtCharacterApply
         for (var i = 0; i < store.Pairs.Count; i++)
         {
             var pair = store.Pairs[i];
-            if (pair == null ||
-                string.IsNullOrEmpty(pair.MaterialName) ||
-                string.IsNullOrEmpty(pair.ExtensionJson))
+            if (
+                pair == null
+                || string.IsNullOrEmpty(pair.MaterialName)
+                || string.IsNullOrEmpty(pair.ExtensionJson)
+            )
             {
                 continue;
             }
 
             any = true;
             var found = false;
-            foreach (var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
-                         root,
-                         pair.MaterialName))
+            foreach (
+                var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                    root,
+                    pair.MaterialName
+                )
+            )
             {
                 if (material == null)
                 {
@@ -653,19 +983,40 @@ public static class VrmxtCharacterApply
                 }
 
                 found = true;
-                var shaderName = material.shader != null ? material.shader.name : "(null shader)";
-                sb.Append("  store='").Append(pair.MaterialName)
-                    .Append("' live='").Append(material.name)
-                    .Append("' id=").Append(material.GetInstanceID())
-                    .Append(" shader='").Append(shaderName)
-                    .Append("' family=").Append(ClassifyShaderFamily(shaderName))
+                DescribeLiveMaterialHealth(
+                    material,
+                    out var shaderName,
+                    out var mainTexName,
+                    out var mainTex,
+                    out var color,
+                    out var risks
+                );
+                sb.Append("  store='")
+                    .Append(pair.MaterialName)
+                    .Append("' live='")
+                    .Append(material.name)
+                    .Append("' id=")
+                    .Append(material.GetInstanceID())
+                    .Append(" shader='")
+                    .Append(shaderName)
+                    .Append("' family=")
+                    .Append(ClassifyShaderFamily(shaderName))
+                    .Append(" ")
+                    .Append(mainTexName)
+                    .Append("=")
+                    .Append(mainTex != null ? "'" + mainTex.name + "'" : "null")
+                    .Append(" _Color=")
+                    .Append(FormatColor(color))
                     .Append('\n');
+                if (risks.Count > 0)
+                {
+                    sb.Append("    RISKS=[").Append(string.Join(", ", risks)).Append("]\n");
+                }
             }
 
             if (!found)
             {
-                sb.Append("  store='").Append(pair.MaterialName)
-                    .Append("' live=(none)\n");
+                sb.Append("  store='").Append(pair.MaterialName).Append("' live=(none)\n");
             }
         }
 
@@ -675,10 +1026,252 @@ public static class VrmxtCharacterApply
         }
     }
 
+    private static void SummarizeOverrideJson(
+        string extensionJson,
+        out string shaderId,
+        out string variant,
+        out int propCount,
+        out int texPropCount,
+        out int bindingCount,
+        out bool jsonHasMainTex,
+        out Color? jsonColor,
+        out List<string> texNames
+    )
+    {
+        shaderId = "(parse fail)";
+        variant = "?";
+        propCount = 0;
+        texPropCount = 0;
+        bindingCount = 0;
+        jsonHasMainTex = false;
+        jsonColor = null;
+        texNames = new List<string>();
+
+        if (!VrmxtMaterialsOverride.TryParse(extensionJson, out var extension))
+        {
+            return;
+        }
+
+        if (
+            !UnityOverrideSelector.TrySelectUnityEngineOverride(
+                extension,
+                DetectActivePipelineForWarudo(),
+                out var engineOverride
+            )
+        )
+        {
+            shaderId = "(no unity slot for pipeline)";
+            return;
+        }
+
+        var unity = engineOverride.Material as UnityMaterialOverride;
+        shaderId = unity != null ? unity.ShaderName ?? "(null)" : "(not unity)";
+        variant = unity != null ? (unity.Variant ?? "") : "?";
+
+        var props = engineOverride.Properties;
+        if (props != null)
+        {
+            propCount = props.Count;
+            for (var i = 0; i < props.Count; i++)
+            {
+                var p = props[i];
+                if (p == null)
+                {
+                    continue;
+                }
+
+                if (
+                    string.Equals(
+                        p.Type,
+                        VrmxtMaterialsOverride.TargetTypeTexture,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    texPropCount++;
+                    texNames.Add(
+                        (p.Name ?? "?")
+                            + "@"
+                            + (p.TextureIndex.HasValue ? p.TextureIndex.Value.ToString() : "?")
+                    );
+                    if (IsMainAlbedoTextureName(p.Name))
+                    {
+                        jsonHasMainTex = true;
+                    }
+                }
+                else if (
+                    string.Equals(p.Name, "_Color", StringComparison.Ordinal)
+                    && p.VectorValue != null
+                    && p.VectorValue.Count >= 3
+                )
+                {
+                    jsonColor = new Color(
+                        p.VectorValue[0],
+                        p.VectorValue[1],
+                        p.VectorValue[2],
+                        p.VectorValue.Count >= 4 ? p.VectorValue[3] : 1f
+                    );
+                }
+            }
+        }
+
+        bindingCount = engineOverride.Bindings != null ? engineOverride.Bindings.Count : 0;
+    }
+
+    private static void CollectOverrideTextureIndices(string extensionJson, SortedSet<int> indices)
+    {
+        if (
+            !VrmxtMaterialsOverride.TryParse(extensionJson, out var extension)
+            || !VrmxtMaterialsOverride.TryGetUnityOverrides(extension, out var slots)
+        )
+        {
+            return;
+        }
+
+        for (var s = 0; s < slots.Count; s++)
+        {
+            var props = slots[s]?.Properties;
+            if (props == null)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < props.Count; i++)
+            {
+                var p = props[i];
+                if (
+                    p != null
+                    && string.Equals(
+                        p.Type,
+                        VrmxtMaterialsOverride.TargetTypeTexture,
+                        StringComparison.Ordinal
+                    )
+                    && p.TextureIndex.HasValue
+                    && p.TextureIndex.Value >= 0
+                )
+                {
+                    indices.Add(p.TextureIndex.Value);
+                }
+            }
+        }
+    }
+
+    private static int CountUnresolvedOverrideTextures(
+        VrmxtMaterialsOverridePair pair,
+        VrmxtMaterialsOverrideInstance store
+    )
+    {
+        if (pair == null || store == null || string.IsNullOrEmpty(pair.ExtensionJson))
+        {
+            return 0;
+        }
+
+        var indices = new SortedSet<int>();
+        CollectOverrideTextureIndices(pair.ExtensionJson, indices);
+        var unresolved = 0;
+        foreach (var index in indices)
+        {
+            if (!store.TryGetImportedTexture(index, out var texture) || texture == null)
+            {
+                unresolved++;
+            }
+        }
+
+        return unresolved;
+    }
+
+    private static void DescribeLiveMaterialHealth(
+        Material material,
+        out string shaderName,
+        out string mainTexName,
+        out Texture mainTex,
+        out Color? color,
+        out List<string> risks
+    )
+    {
+        shaderName = material.shader != null ? material.shader.name : "(null shader)";
+        mainTexName = "(no main slot)";
+        mainTex = null;
+        color = null;
+        risks = new List<string>();
+
+        if (material.HasProperty("_MainTex"))
+        {
+            mainTexName = "_MainTex";
+            mainTex = material.GetTexture("_MainTex");
+        }
+        else if (material.HasProperty("_BaseMap"))
+        {
+            mainTexName = "_BaseMap";
+            mainTex = material.GetTexture("_BaseMap");
+        }
+        else if (material.HasProperty("_BaseColorMap"))
+        {
+            mainTexName = "_BaseColorMap";
+            mainTex = material.GetTexture("_BaseColorMap");
+        }
+
+        if (material.HasProperty("_Color"))
+        {
+            color = material.GetColor("_Color");
+        }
+        else if (material.HasProperty("_BaseColor"))
+        {
+            color = material.GetColor("_BaseColor");
+        }
+
+        if (ClassifyShaderFamily(shaderName) == "mtoon")
+        {
+            risks.Add("still-mtoon");
+        }
+
+        if (mainTexName != "(no main slot)" && mainTex == null)
+        {
+            risks.Add("mainTex-null");
+        }
+
+        if (color.HasValue && IsNearBlack(color.Value))
+        {
+            risks.Add("color-near-black");
+        }
+    }
+
+    private static bool IsMainAlbedoTextureName(string name)
+    {
+        return string.Equals(name, "_MainTex", StringComparison.Ordinal)
+            || string.Equals(name, "_BaseMap", StringComparison.Ordinal)
+            || string.Equals(name, "_BaseColorMap", StringComparison.Ordinal);
+    }
+
+    private static bool IsNearBlack(Color c)
+    {
+        return c.r <= 0.02f && c.g <= 0.02f && c.b <= 0.02f;
+    }
+
+    private static string FormatColor(Color? c)
+    {
+        if (!c.HasValue)
+        {
+            return "(none)";
+        }
+
+        var v = c.Value;
+        return "("
+            + v.r.ToString("0.###")
+            + ","
+            + v.g.ToString("0.###")
+            + ","
+            + v.b.ToString("0.###")
+            + ","
+            + v.a.ToString("0.###")
+            + ")";
+    }
+
     private static void DumpWarudoMaterialPropertiesCatalog(
         System.Text.StringBuilder sb,
         CharacterAsset character,
-        VrmxtMaterialsOverrideInstance store)
+        VrmxtMaterialsOverrideInstance store
+    )
     {
         sb.AppendLine("--- Character.MaterialProperties (Warudo UI catalog) ---");
         // MaterialProperties is Dictionary<string, List<ShaderProperty>> — no Unity
@@ -698,13 +1291,16 @@ public static class VrmxtCharacterApply
             for (var i = 0; i < store.Pairs.Count; i++)
             {
                 var pair = store.Pairs[i];
-                if (pair != null &&
-                    !string.IsNullOrEmpty(pair.MaterialName) &&
-                    !string.IsNullOrEmpty(pair.ExtensionJson))
+                if (
+                    pair != null
+                    && !string.IsNullOrEmpty(pair.MaterialName)
+                    && !string.IsNullOrEmpty(pair.ExtensionJson)
+                )
                 {
                     overrideKeys.Add(pair.MaterialName);
-                    var stripped =
-                        VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(pair.MaterialName);
+                    var stripped = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(
+                        pair.MaterialName
+                    );
                     if (!string.IsNullOrEmpty(stripped))
                     {
                         overrideKeys.Add(stripped);
@@ -740,11 +1336,14 @@ public static class VrmxtCharacterApply
             var isOverrideTarget = false;
             foreach (var ok in overrideKeys)
             {
-                if (string.Equals(key, ok, StringComparison.Ordinal) ||
-                    string.Equals(
+                if (
+                    string.Equals(key, ok, StringComparison.Ordinal)
+                    || string.Equals(
                         VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(key),
                         VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(ok),
-                        StringComparison.Ordinal))
+                        StringComparison.Ordinal
+                    )
+                )
                 {
                     isOverrideTarget = true;
                     break;
@@ -756,18 +1355,24 @@ public static class VrmxtCharacterApply
                 continue;
             }
 
-            sb.Append("  key='").Append(key)
-                .Append("' props=").Append(propCount)
-                .Append(" catalogShader='").Append(catalogShader)
-                .Append("' family=").Append(ClassifyShaderFamily(catalogShader))
-                .Append(" sample=[").Append(sample)
+            sb.Append("  key='")
+                .Append(key)
+                .Append("' props=")
+                .Append(propCount)
+                .Append(" catalogShader='")
+                .Append(catalogShader)
+                .Append("' family=")
+                .Append(ClassifyShaderFamily(catalogShader))
+                .Append(" sample=[")
+                .Append(sample)
                 .Append("]\n");
         }
     }
 
     private static void DumpWarudoLastMaterialProperties(
         System.Text.StringBuilder sb,
-        CharacterAsset character)
+        CharacterAsset character
+    )
     {
         sb.AppendLine("--- Character.LastMaterialProperties (runtime values) ---");
         var last = character.LastMaterialProperties;
@@ -810,9 +1415,12 @@ public static class VrmxtCharacterApply
                 }
             }
 
-            sb.Append("  mat='").Append(kv.Key)
-                .Append("' values=").Append(propCount)
-                .Append(" sample=[").Append(sample)
+            sb.Append("  mat='")
+                .Append(kv.Key)
+                .Append("' values=")
+                .Append(propCount)
+                .Append(" sample=[")
+                .Append(sample)
                 .Append("] family=")
                 .Append(ClassifyPropNameSample(sample))
                 .Append('\n');
@@ -827,8 +1435,10 @@ public static class VrmxtCharacterApply
             return "unknown";
         }
 
-        if (shaderName.IndexOf("lilToon", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            shaderName.IndexOf("lil/", StringComparison.OrdinalIgnoreCase) >= 0)
+        if (
+            shaderName.IndexOf("lilToon", StringComparison.OrdinalIgnoreCase) >= 0
+            || shaderName.IndexOf("lil/", StringComparison.OrdinalIgnoreCase) >= 0
+        )
         {
             return "lilToon";
         }
@@ -838,9 +1448,11 @@ public static class VrmxtCharacterApply
             return "poiyomi";
         }
 
-        if (shaderName.IndexOf("MToon", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            shaderName.IndexOf("VRM10/MToon", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            shaderName.IndexOf("VRM/", StringComparison.OrdinalIgnoreCase) >= 0)
+        if (
+            shaderName.IndexOf("MToon", StringComparison.OrdinalIgnoreCase) >= 0
+            || shaderName.IndexOf("VRM10/MToon", StringComparison.OrdinalIgnoreCase) >= 0
+            || shaderName.IndexOf("VRM/", StringComparison.OrdinalIgnoreCase) >= 0
+        )
         {
             return "mtoon";
         }
@@ -856,16 +1468,20 @@ public static class VrmxtCharacterApply
         }
 
         // MToon-ish vs lilToon-ish from common property names in the sample.
-        if (sampleCsv.IndexOf("_ShadeColor", StringComparison.Ordinal) >= 0 ||
-            sampleCsv.IndexOf("_RimFresnelPower", StringComparison.Ordinal) >= 0 ||
-            sampleCsv.IndexOf("_MToonVersion", StringComparison.Ordinal) >= 0)
+        if (
+            sampleCsv.IndexOf("_ShadeColor", StringComparison.Ordinal) >= 0
+            || sampleCsv.IndexOf("_RimFresnelPower", StringComparison.Ordinal) >= 0
+            || sampleCsv.IndexOf("_MToonVersion", StringComparison.Ordinal) >= 0
+        )
         {
             return "mtoon-ish";
         }
 
-        if (sampleCsv.IndexOf("_UseShadow", StringComparison.Ordinal) >= 0 ||
-            sampleCsv.IndexOf("_lilShadowCasterBias", StringComparison.Ordinal) >= 0 ||
-            sampleCsv.IndexOf("_AsUnlit", StringComparison.Ordinal) >= 0)
+        if (
+            sampleCsv.IndexOf("_UseShadow", StringComparison.Ordinal) >= 0
+            || sampleCsv.IndexOf("_lilShadowCasterBias", StringComparison.Ordinal) >= 0
+            || sampleCsv.IndexOf("_AsUnlit", StringComparison.Ordinal) >= 0
+        )
         {
             return "liltoon-ish";
         }
@@ -908,8 +1524,10 @@ public static class VrmxtCharacterApply
                 continue;
             }
 
-            if (!VrmxtMaterialsOverride.TryParse(pair.ExtensionJson, out var extension) ||
-                extension?.Overrides == null)
+            if (
+                !VrmxtMaterialsOverride.TryParse(pair.ExtensionJson, out var extension)
+                || extension?.Overrides == null
+            )
             {
                 continue;
             }
@@ -1164,8 +1782,10 @@ public static class VrmxtCharacterApply
     private static Func<int, Transform> CreateNodeResolver(GameObject root, byte[] glbBytes)
     {
         // Prefer GLB name resolve over RuntimeGltfInstance.Nodes (UniGLTF not a UMod ref).
-        if (!GlbChunks.TryExtractJson(glbBytes, out var json) ||
-            !VrmxtVfxNodeResolver.TryReadNodeNames(json, out var names))
+        if (
+            !GlbChunks.TryExtractJson(glbBytes, out var json)
+            || !VrmxtVfxNodeResolver.TryReadNodeNames(json, out var names)
+        )
         {
             return null;
         }

@@ -167,6 +167,10 @@ namespace UniVRMXT.MaterialsOverride
 
                     ApplyProperties(material, engineOverride.Properties, resolveTexture);
                     ApplyBindings(material, engineOverride.Bindings, hasMtoon, mtoon, resolveTexture);
+                    // Thry/Poiyomi _Mode on_value_actions (render_queue / RenderType) only run
+                    // in the Editor inspector — runtime SetFloat("_Mode") alone leaves the
+                    // stock MToon queue. Additive glitter/emission then draws wrong / invisible.
+                    ApplyUnityRenderStateFromMode(material);
                     appliedToAny = true;
                 }
 
@@ -178,6 +182,35 @@ namespace UniVRMXT.MaterialsOverride
 
             return applied;
         }
+
+        /// <summary>
+        /// Portable Unity <c>idType: shaderName</c> for a live material. Prefer the
+        /// <c>OriginalShader</c> override tag when set (Unity material tags; used by
+        /// optimizers such as Thry Lock to remember the unlocked shader). Otherwise
+        /// <see cref="Shader.name"/>. Does not parse locked shader path strings.
+        /// </summary>
+        public static string GetPortableShaderName(Material material)
+        {
+            if (material == null || material.shader == null)
+            {
+                return null;
+            }
+
+            var original = material.GetTag(OriginalShaderTag, false, string.Empty);
+            if (!string.IsNullOrEmpty(original))
+            {
+                return original;
+            }
+
+            return material.shader.name;
+        }
+
+        /// <summary>
+        /// Unity material override tag used by Thry Shader Optimizer (and compatible
+        /// lockers) to store the unlocked shader name while the active shader is a
+        /// generated locked variant.
+        /// </summary>
+        public const string OriginalShaderTag = "OriginalShader";
 
         /// <summary>
         /// Resolve a shader by name: per-call <paramref name="resolveShader"/>, else
@@ -339,7 +372,12 @@ namespace UniVRMXT.MaterialsOverride
                         break;
 
                     case VrmxtMaterialsOverride.TargetTypeTexture:
-                        ApplyTexture(material, property.Name, property.TextureIndex, resolveTexture);
+                        ApplyTexture(
+                            material,
+                            property.Name,
+                            property.TextureIndex,
+                            property.VectorValue,
+                            resolveTexture);
                         break;
 
                     case VrmxtMaterialsOverride.TargetTypeShaderFeature:
@@ -420,34 +458,86 @@ namespace UniVRMXT.MaterialsOverride
 
         private static void ApplyVector(Material material, string target, IReadOnlyList<float> values)
         {
-            if (values == null || values.Count == 0)
+            if (values == null || values.Count == 0 || material == null || string.IsNullOrEmpty(target))
             {
                 return;
             }
 
-            if (values.Count == 3)
+            // Colors were captured via GetColor; vectors (UV pans, scroll directions with
+            // out-of-0..1 / negative components like _EmissiveScroll_Direction) via GetVector.
+            // SetColor applies color-space conversion and must not be used for Vector props —
+            // that kills Poiyomi scrolling emission / glitter pans.
+            if (IsShaderColorProperty(material, target))
             {
-                material.SetColor(target, new Color(values[0], values[1], values[2], 1f));
+                if (values.Count >= 4)
+                {
+                    material.SetColor(
+                        target,
+                        new Color(values[0], values[1], values[2], values[3]));
+                }
+                else if (values.Count == 3)
+                {
+                    material.SetColor(target, new Color(values[0], values[1], values[2], 1f));
+                }
+                else
+                {
+                    material.SetColor(
+                        target,
+                        new Color(
+                            values[0],
+                            values.Count > 1 ? values[1] : 0f,
+                            values.Count > 2 ? values[2] : 0f,
+                            values.Count > 3 ? values[3] : 1f));
+                }
+
                 return;
             }
 
-            if (values.Count == 4)
+            material.SetVector(
+                target,
+                new Vector4(
+                    values[0],
+                    values.Count > 1 ? values[1] : 0f,
+                    values.Count > 2 ? values[2] : 0f,
+                    values.Count > 3 ? values[3] : 0f));
+        }
+
+        private static bool IsShaderColorProperty(Material material, string propertyName)
+        {
+            var shader = material != null ? material.shader : null;
+            if (shader == null || string.IsNullOrEmpty(propertyName))
             {
-                material.SetColor(target, new Color(values[0], values[1], values[2], values[3]));
-                return;
+                return false;
             }
 
-            material.SetVector(target, new Vector4(
-                values.Count > 0 ? values[0] : 0f,
-                values.Count > 1 ? values[1] : 0f,
-                values.Count > 2 ? values[2] : 0f,
-                values.Count > 3 ? values[3] : 0f));
+            var count = shader.GetPropertyCount();
+            for (var i = 0; i < count; i++)
+            {
+                if (!string.Equals(shader.GetPropertyName(i), propertyName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                return shader.GetPropertyType(i) == ShaderPropertyType.Color;
+            }
+
+            return false;
         }
 
         private static void ApplyTexture(
             Material material,
             string target,
             int? textureIndex,
+            Func<int, Texture> resolveTexture)
+        {
+            ApplyTexture(material, target, textureIndex, null, resolveTexture);
+        }
+
+        private static void ApplyTexture(
+            Material material,
+            string target,
+            int? textureIndex,
+            IReadOnlyList<float> textureTransform,
             Func<int, Texture> resolveTexture)
         {
             if (!textureIndex.HasValue || resolveTexture == null)
@@ -458,8 +548,108 @@ namespace UniVRMXT.MaterialsOverride
             var texture = resolveTexture(textureIndex.Value);
             if (texture != null)
             {
+                if (!CanAssignTextureToProperty(material, target, texture))
+                {
+                    Debug.LogWarning(
+                        "VRMXT_materials_override: skip texture '" +
+                        target +
+                        "' on '" +
+                        (material != null ? material.name : "?") +
+                        "' — dimension mismatch (tex=" +
+                        texture.dimension +
+                        ").");
+                    return;
+                }
+
                 material.SetTexture(target, texture);
+                ApplyTextureTransform(material, target, textureTransform);
+                return;
             }
+
+            Debug.LogWarning(
+                "VRMXT_materials_override: texture property '" +
+                target +
+                "' index=" +
+                textureIndex.Value +
+                " unresolved on '" +
+                (material != null ? material.name : "?") +
+                "' (RememberTextures miss / out of range).");
+        }
+
+        /// <summary>
+        /// Apply optional Unity texture ST from <c>properties[].value</c>
+        /// <c>[scale.x, scale.y, offset.x, offset.y]</c> (2-float scale-only also accepted).
+        /// </summary>
+        private static void ApplyTextureTransform(
+            Material material,
+            string target,
+            IReadOnlyList<float> textureTransform)
+        {
+            if (material == null ||
+                string.IsNullOrEmpty(target) ||
+                textureTransform == null ||
+                textureTransform.Count < 2 ||
+                !material.HasProperty(target))
+            {
+                return;
+            }
+
+            material.SetTextureScale(
+                target,
+                new Vector2(textureTransform[0], textureTransform[1]));
+
+            if (textureTransform.Count >= 4)
+            {
+                material.SetTextureOffset(
+                    target,
+                    new Vector2(textureTransform[2], textureTransform[3]));
+            }
+        }
+
+        /// <summary>
+        /// Avoid Unity's "Error assigning 2D texture to CUBE…" when override JSON
+        /// points a Cube/3D slot at a packed 2D glTF image (common for unused
+        /// reflection cube props on toon presets).
+        /// </summary>
+        private static bool CanAssignTextureToProperty(
+            Material material,
+            string propertyName,
+            Texture texture)
+        {
+            if (material == null || texture == null || string.IsNullOrEmpty(propertyName))
+            {
+                return false;
+            }
+
+            if (!material.HasProperty(propertyName))
+            {
+                return false;
+            }
+
+            var shader = material.shader;
+            if (shader == null)
+            {
+                return true;
+            }
+
+            var count = shader.GetPropertyCount();
+            for (var i = 0; i < count; i++)
+            {
+                if (!string.Equals(shader.GetPropertyName(i), propertyName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (shader.GetPropertyType(i) != ShaderPropertyType.Texture)
+                {
+                    return true;
+                }
+
+                var expected = shader.GetPropertyTextureDimension(i);
+                return expected == TextureDimension.Any || expected == texture.dimension;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -486,7 +676,8 @@ namespace UniVRMXT.MaterialsOverride
                 return;
             }
 
-            var covered = CollectCoveredTextureTargets(properties, bindings, hasMtoon, mtoon);
+                var covered = CollectCoveredTextureTargets(properties, bindings, hasMtoon, mtoon);
+            var clearedCritical = new List<string>();
             var count = shader.GetPropertyCount();
             for (var i = 0; i < count; i++)
             {
@@ -503,7 +694,27 @@ namespace UniVRMXT.MaterialsOverride
                     continue;
                 }
 
+                var previous = material.GetTexture(name);
                 material.SetTexture(name, null);
+                if (previous != null &&
+                    (string.Equals(name, "_MainTex", StringComparison.Ordinal) ||
+                     string.Equals(name, "_BaseMap", StringComparison.Ordinal) ||
+                     string.Equals(name, "_BaseColorMap", StringComparison.Ordinal)))
+                {
+                    clearedCritical.Add(name + " was '" + previous.name + "'");
+                }
+            }
+
+            if (clearedCritical.Count > 0)
+            {
+                Debug.LogWarning(
+                    "VRMXT_materials_override: cleared stock albedo on '" +
+                    material.name +
+                    "' after shader swap — override claims texture ownership but omits " +
+                    "main map. Cleared: " +
+                    string.Join(", ", clearedCritical) +
+                    ". Mesh may look invisible until _MainTex/_BaseMap is in properties " +
+                    "or bindings.");
             }
         }
 
@@ -631,6 +842,45 @@ namespace UniVRMXT.MaterialsOverride
             else
             {
                 material.DisableKeyword(target);
+            }
+        }
+
+        /// <summary>
+        /// Map Poiyomi/Thry <c>_Mode</c> rendering preset to Unity <see cref="Material.renderQueue"/>
+        /// and <c>RenderType</c> tag. Values match Poiyomi Toon 9.3 <c>_Mode</c> on_value_actions
+        /// (0 Opaque, 1 Cutout, 9 TransClipping, 2 Fade, 3 Transparent, 4 Additive, …).
+        /// </summary>
+        public static void ApplyUnityRenderStateFromMode(Material material)
+        {
+            if (material == null || !material.HasProperty("_Mode"))
+            {
+                return;
+            }
+
+            var mode = Mathf.RoundToInt(material.GetFloat("_Mode"));
+            switch (mode)
+            {
+                case 0: // Opaque
+                    material.renderQueue = 2000;
+                    material.SetOverrideTag("RenderType", "Opaque");
+                    break;
+                case 1: // Cutout
+                    material.renderQueue = 2450;
+                    material.SetOverrideTag("RenderType", "TransparentCutout");
+                    break;
+                case 9: // TransClipping
+                    material.renderQueue = 2460;
+                    material.SetOverrideTag("RenderType", "TransparentCutout");
+                    break;
+                case 2: // Fade
+                case 3: // Transparent
+                case 4: // Additive — TestPoi
+                case 5: // Soft Additive
+                case 6: // Multiplicative
+                case 7: // 2x Multiplicative
+                    material.renderQueue = 3000;
+                    material.SetOverrideTag("RenderType", "Transparent");
+                    break;
             }
         }
 

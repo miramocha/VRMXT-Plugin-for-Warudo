@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
+using UnityEngine;
 using UniVRMXT.Format;
 using UniVRMXT.MaterialsOverride;
-using UnityEngine;
 using Warudo.Core;
 using Warudo.Core.Attributes;
 using Warudo.Core.Data;
@@ -20,7 +20,8 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "7c4e9a2b-8f1d-4c6e-b3a0-5d9e2f8c1b70",
     Title = "VRMXT Manager",
     Category = "CATEGORY_CHARACTERS",
-    Singleton = false)]
+    Singleton = false
+)]
 public sealed class VrmxtManagerAsset : Asset
 {
     [DataInput]
@@ -37,24 +38,26 @@ public sealed class VrmxtManagerAsset : Asset
     [DataInput]
     [Label("Enable materials override")]
     [Description(
-        "Apply VRMXT_materials_override on this Character. Off restores stock shaders. " +
-        "Required for Apply / Clear / Export below.")]
+        "Apply VRMXT_materials_override on this Character. Off restores stock shaders. "
+            + "Required for Apply / Clear / Export below."
+    )]
     [HiddenIf(nameof(HideVrmxtControls))]
     public bool EnableMaterialsOverride = true;
 
     [Markdown]
     [HiddenIf(nameof(HideVrmxtControls))]
     public string Hint =
-        "Add one VRMXT Manager per Character. Feature toggles default on. " +
-        "Without a Manager, the plugin still applies both features. " +
-        "Export patches `VRMXT_materials_override` into a copy of the original local VRM " +
-        "(geometry/BIN unchanged). Does not capture live mesh or VFX edits.";
+        "Add one VRMXT Manager per Character. Feature toggles default on. "
+        + "Without a Manager, the plugin still applies both features. "
+        + "Export patches `VRMXT_materials_override` into a copy of the original local VRM "
+        + "(geometry/BIN unchanged). Does not capture live mesh or VFX edits.";
 
     [DataInput]
     [Label("Materials")]
     [Description(
-        "Filled from the Character. Use Refresh after load. Pick shaders then Apply. " +
-        "Add/remove rows are ignored on Apply/Export — Refresh rebuilds the list.")]
+        "Filled from the Character. Use Refresh after load. Pick shaders then Apply. "
+            + "Add/remove rows are ignored on Apply/Export — Refresh rebuilds the list."
+    )]
     [HiddenIf(nameof(HideVrmxtControls))]
     public VrmxtMaterialShaderRow[] Materials = Array.Empty<VrmxtMaterialShaderRow>();
 
@@ -134,12 +137,15 @@ public sealed class VrmxtManagerAsset : Asset
 
         RefreshCharacterSourceWatch();
 
-        if (Character != null &&
-            VrmxtCharacterOwnership.IsClaimedByOther(Character.Id, Id, CollectSceneClaims()))
+        if (
+            Character != null
+            && VrmxtCharacterOwnership.IsClaimedByOther(Character.Id, Id, CollectSceneClaims())
+        )
         {
             var name = Character.Name;
             ClearCharacterAssignment(
-                "Character '" + name + "' is already claimed by another VRMXT Manager.");
+                "Character '" + name + "' is already claimed by another VRMXT Manager."
+            );
             return;
         }
 
@@ -206,12 +212,57 @@ public sealed class VrmxtManagerAsset : Asset
     [Trigger]
     [Label("Refresh materials")]
     [Description(
-        "Rebuild the material list from the Character VRM / store. Re-attaches file " +
-        "overrides when the live store is empty, then re-applies if Materials Override is on.")]
+        "Rebuild the material list from the Character VRM / store. Re-attaches file "
+            + "overrides when the live store is empty, then re-applies if Materials Override is on."
+    )]
     [HiddenIf(nameof(HideVrmxtControls))]
     public void RefreshMaterials()
     {
         RefreshMaterialsAsync(reApplyOverrides: true, reattachFromFile: true).Forget();
+    }
+
+    [Trigger]
+    [Label("Dump materials debug")]
+    [Description(
+        "Log JSON vs live renderer vs remembered textures (same format as Unity Editor dump). "
+            + "Compare to VRC project Dump Materials Debug output."
+    )]
+    [HiddenIf(nameof(HideVrmxtControls))]
+    public void DumpMaterialsDebug()
+    {
+        if (!IsAssignedVrm1Character())
+        {
+            SetStatus(
+                Character == null || !Character.IsNonNullAndActive()
+                    ? "Select a VRM 1.0 Character."
+                    : "'" + Character.Name + "' is not VRM 1.0."
+            );
+            return;
+        }
+
+        var root = VrmxtCharacterApply.TryFindCharacterRoot(Character);
+        if (root == null)
+        {
+            SetStatus("Character GameObject not found.");
+            return;
+        }
+
+        var store = root.GetComponent<VrmxtMaterialsOverrideInstance>();
+        if (store == null)
+        {
+            SetStatus(
+                "No VrmxtMaterialsOverrideInstance on '"
+                    + Character.Name
+                    + "'. Enable Materials Override / Apply first."
+            );
+            return;
+        }
+
+        // Same console format as UniVRMXT Editor dump — easy side-by-side compare.
+        VrmxtMaterialsOverrideDebug.Dump(root, store);
+        // Extra Warudo UI catalog mismatch lines.
+        VrmxtCharacterApply.DumpMaterialsOverrideDebug(Character, root, store);
+        SetStatus("Materials debug dumped for '" + Character.Name + "'. See console.");
     }
 
     private async UniTask RefreshMaterialsAsync(bool reApplyOverrides, bool reattachFromFile = true)
@@ -221,7 +272,8 @@ public sealed class VrmxtManagerAsset : Asset
             SetStatus(
                 Character == null || !Character.IsNonNullAndActive()
                     ? "Select a VRM 1.0 Character."
-                    : "'" + Character.Name + "' is not VRM 1.0.");
+                    : "'" + Character.Name + "' is not VRM 1.0."
+            );
             SetDataInput(nameof(Materials), Array.Empty<VrmxtMaterialShaderRow>(), broadcast: true);
             Broadcast();
             return;
@@ -251,8 +303,12 @@ public sealed class VrmxtManagerAsset : Asset
         // Skip after intentional Clear — empty store must not reload from source .vrm.
         if (reattachFromFile && !StoreHasOverrideJson(store))
         {
-            if (!VrmxtCharacterSource.TryGetPersistentRelativePath(Character.Source, out var relativePath) ||
-                !Context.PersistentDataManager.HasFile(relativePath))
+            if (
+                !VrmxtCharacterSource.TryGetPersistentRelativePath(
+                    Character.Source,
+                    out var relativePath
+                ) || !Context.PersistentDataManager.HasFile(relativePath)
+            )
             {
                 SetStatus("Character Source is not a readable local character:// .vrm.");
             }
@@ -260,11 +316,19 @@ public sealed class VrmxtManagerAsset : Asset
             {
                 try
                 {
-                    var bytes = await Context.PersistentDataManager.ReadFileBytesAsync(relativePath);
-                    if (GlbChunks.TryExtractJson(bytes, out var gltfJson) &&
-                        !string.IsNullOrEmpty(gltfJson) &&
-                        VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out store) &&
-                        store != null)
+                    var bytes = await Context.PersistentDataManager.ReadFileBytesAsync(
+                        relativePath
+                    );
+                    if (
+                        GlbChunks.TryExtractJson(bytes, out var gltfJson)
+                        && !string.IsNullOrEmpty(gltfJson)
+                        && VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(
+                            root,
+                            gltfJson,
+                            out store
+                        )
+                        && store != null
+                    )
                     {
                         gltfJsonForApply = gltfJson;
                         attachedFromFile = StoreHasOverrideJson(store);
@@ -278,15 +342,18 @@ public sealed class VrmxtManagerAsset : Asset
         }
 
         // Re-apply when Materials Override is on (covers late lilToon warm / prior applied=0).
-        if (reApplyOverrides &&
-            EnableMaterialsOverride &&
-            StoreHasOverrideJson(store))
+        if (reApplyOverrides && EnableMaterialsOverride && StoreHasOverrideJson(store))
         {
             try
             {
-                if (string.IsNullOrEmpty(gltfJsonForApply) &&
-                    VrmxtCharacterSource.TryGetPersistentRelativePath(Character.Source, out var path) &&
-                    Context.PersistentDataManager.HasFile(path))
+                if (
+                    string.IsNullOrEmpty(gltfJsonForApply)
+                    && VrmxtCharacterSource.TryGetPersistentRelativePath(
+                        Character.Source,
+                        out var path
+                    )
+                    && Context.PersistentDataManager.HasFile(path)
+                )
                 {
                     var bytes = await Context.PersistentDataManager.ReadFileBytesAsync(path);
                     GlbChunks.TryExtractJson(bytes, out gltfJsonForApply);
@@ -297,17 +364,51 @@ public sealed class VrmxtManagerAsset : Asset
                     VrmxtMaterialsStockShaders.CaptureIfAbsent(root);
                     Func<int, Texture> resolveTexture = index =>
                         store.TryGetImportedTexture(index, out var texture) ? texture : null;
+                    // Explicit provider — uMod shaders stay null under Shader.Find.
+                    var resolveShader = VrmxtMaterialsOverrideApplier.ShaderResolveProvider;
+                    if (resolveShader == null)
+                    {
+                        Debug.LogWarning(
+                            "VRMXT: Refresh re-apply — ShaderResolveProvider is null; " +
+                            "uMod shaders may fail Shader.Find."
+                        );
+                    }
+
                     applied = VrmxtMaterialsOverrideApplier.Apply(
                         root,
                         store,
                         gltfJsonForApply,
                         VrmxtCharacterApply.DetectActivePipelineForWarudo(),
-                        resolveTexture);
+                        resolveTexture,
+                        null,
+                        resolveShader
+                    );
                     if (applied > 0)
                     {
                         VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(
-                            Character, root, store);
+                            Character,
+                            root,
+                            store
+                        );
                     }
+                    else
+                    {
+                        Debug.LogWarning(
+                            "VRMXT: Refresh re-apply returned 0 (overrides=" +
+                            CountOverrideJson(store) +
+                            ", rememberedTextures=" +
+                            (store.ImportedTextures?.Count ?? 0) +
+                            ", resolveShader=" +
+                            (resolveShader != null ? "set" : "null") +
+                            "). Live mats may already be overridden; check shader resolve warnings."
+                        );
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning(
+                        "VRMXT: Refresh skipped re-apply — could not read glTF JSON from Character Source."
+                    );
                 }
             }
             catch (Exception e)
@@ -325,9 +426,18 @@ public sealed class VrmxtManagerAsset : Asset
 
         var overrideCount = CountOverrideJson(store);
         SetStatus(
-            "Refreshed " + (Materials?.Length ?? 0) + " material(s); overrides=" +
-            overrideCount + " reAttached=" + attachedFromFile + " applied=" + applied +
-            " [" + Character.Name + "].");
+            "Refreshed "
+                + (Materials?.Length ?? 0)
+                + " material(s); overrides="
+                + overrideCount
+                + " reAttached="
+                + attachedFromFile
+                + " applied="
+                + applied
+                + " ["
+                + Character.Name
+                + "]."
+        );
     }
 
     private void FillMaterialsFromStore(GameObject root, VrmxtMaterialsOverrideInstance store)
@@ -394,7 +504,8 @@ public sealed class VrmxtManagerAsset : Asset
         GameObject root,
         string gltfJson,
         out VrmxtMaterialsOverrideInstance store,
-        out string error)
+        out string error
+    )
     {
         store = root != null ? root.GetComponent<VrmxtMaterialsOverrideInstance>() : null;
         error = null;
@@ -403,8 +514,10 @@ public sealed class VrmxtManagerAsset : Asset
         {
             // Seed store from source file (or empty renderer pairs). Do not call this when
             // live Apply already wrote ExtensionJson — SetPairs would wipe shaders.
-            if (!VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out store) ||
-                store == null)
+            if (
+                !VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out store)
+                || store == null
+            )
             {
                 error = "Failed to attach VRMXT materials store for export.";
                 return false;
@@ -416,18 +529,23 @@ public sealed class VrmxtManagerAsset : Asset
         for (var i = 0; i < materials.Length; i++)
         {
             var row = materials[i];
-            if (row == null ||
-                string.IsNullOrWhiteSpace(row.MaterialName) ||
-                string.IsNullOrWhiteSpace(row.ShaderName))
+            if (
+                row == null
+                || string.IsNullOrWhiteSpace(row.MaterialName)
+                || string.IsNullOrWhiteSpace(row.ShaderName)
+            )
             {
                 continue;
             }
 
-            if (!VrmxtMaterialsShaderAuthoring.TrySetShaderName(
+            if (
+                !VrmxtMaterialsShaderAuthoring.TrySetShaderName(
                     store,
                     row.MaterialName,
                     row.ShaderName,
-                    out var setError))
+                    out var setError
+                )
+            )
             {
                 Debug.LogWarning("VRMXT: export shader upsert skipped: " + setError);
                 continue;
@@ -447,20 +565,22 @@ public sealed class VrmxtManagerAsset : Asset
 
         if (!StoreHasOverrideJson(store))
         {
-            error = shaderRows == 0
-                ? "No materials override entries to export. Set shaders and Apply first."
-                : "Failed to write shader overrides into the store for export.";
+            error =
+                shaderRows == 0
+                    ? "No materials override entries to export. Set shaders and Apply first."
+                    : "Failed to write shader overrides into the store for export.";
             return false;
         }
 
-        // Non-texture props from live Character mats; textures stay Warudo-owned.
+        // Live props; packed GLB textures kept, new unpackaged Images maps omitted.
         VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(store, root);
         return true;
     }
 
     private static VrmxtMaterialsOverridePair FindStorePair(
         VrmxtMaterialsOverrideInstance store,
-        string materialName)
+        string materialName
+    )
     {
         if (store?.Pairs == null || string.IsNullOrEmpty(materialName))
         {
@@ -476,7 +596,9 @@ public sealed class VrmxtManagerAsset : Asset
                 continue;
             }
 
-            var existing = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(pair.MaterialName);
+            var existing = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(
+                pair.MaterialName
+            );
             if (string.Equals(existing, key, StringComparison.Ordinal))
             {
                 return pair;
@@ -498,8 +620,9 @@ public sealed class VrmxtManagerAsset : Asset
     [Trigger]
     [Label("Clear all material overrides")]
     [Description(
-        "Empty VRMXT materials-override JSON and restore stock shaders (MToon snapshot from " +
-        "before override apply). Does not rewrite the source .vrm file.")]
+        "Empty VRMXT materials-override JSON and restore stock shaders (MToon snapshot from "
+            + "before override apply). Does not rewrite the source .vrm file."
+    )]
     [HiddenIf(nameof(HideVrmxtControls))]
     public void ClearAllMaterialOverrides()
     {
@@ -508,7 +631,9 @@ public sealed class VrmxtManagerAsset : Asset
 
     [Trigger]
     [Label("Export VRMXT patch")]
-    [Description("Patch current materials override JSON into a new copy of the Character's local VRM.")]
+    [Description(
+        "Patch current materials override JSON into a new copy of the Character's local VRM."
+    )]
     [HiddenIf(nameof(HideVrmxtControls))]
     public void ExportVrmxtPatch()
     {
@@ -525,7 +650,9 @@ public sealed class VrmxtManagerAsset : Asset
             return;
         }
 
-        var toClear = VrmxtCharacterOwnership.AssetsThatShouldClearDuplicateClaims(CollectSceneClaims());
+        var toClear = VrmxtCharacterOwnership.AssetsThatShouldClearDuplicateClaims(
+            CollectSceneClaims()
+        );
         if (!toClear.Contains(Id))
         {
             return;
@@ -533,7 +660,8 @@ public sealed class VrmxtManagerAsset : Asset
 
         var name = Character.Name;
         ClearCharacterAssignment(
-            "Cleared duplicate claim on '" + name + "' (another VRMXT Manager owns it).");
+            "Cleared duplicate claim on '" + name + "' (another VRMXT Manager owns it)."
+        );
     }
 
     /// <summary>
@@ -542,7 +670,8 @@ public sealed class VrmxtManagerAsset : Asset
     public static bool TryGetForCharacter(
         Scene scene,
         Guid characterId,
-        out VrmxtManagerAsset asset)
+        out VrmxtManagerAsset asset
+    )
     {
         asset = null;
         if (scene == null || characterId == Guid.Empty)
@@ -681,7 +810,8 @@ public sealed class VrmxtManagerAsset : Asset
                 SetStatus(
                     Character != null
                         ? "'" + Character.Name + "' is not VRM 1.0."
-                        : "Select a VRM 1.0 Character.");
+                        : "Select a VRM 1.0 Character."
+                );
                 Broadcast();
                 return;
             }
@@ -698,7 +828,12 @@ public sealed class VrmxtManagerAsset : Asset
                 return;
             }
 
-            if (!VrmxtCharacterSource.TryGetPersistentRelativePath(Character.Source, out var relativePath))
+            if (
+                !VrmxtCharacterSource.TryGetPersistentRelativePath(
+                    Character.Source,
+                    out var relativePath
+                )
+            )
             {
                 SetStatus("Character Source is not a local character:// .vrm.");
                 return;
@@ -718,7 +853,9 @@ public sealed class VrmxtManagerAsset : Asset
             }
 
             var bytes = await Context.PersistentDataManager.ReadFileBytesAsync(relativePath);
-            if (!GlbChunks.TryExtractJson(bytes, out var gltfJson) || string.IsNullOrEmpty(gltfJson))
+            if (
+                !GlbChunks.TryExtractJson(bytes, out var gltfJson) || string.IsNullOrEmpty(gltfJson)
+            )
             {
                 SetStatus("Failed to extract glTF JSON for re-apply.");
                 return;
@@ -726,8 +863,10 @@ public sealed class VrmxtManagerAsset : Asset
 
             // Stock VRMs have no store after plugin apply (cleared when no override JSON).
             // Authoring must re-attach an empty store before writing shader overrides.
-            if (!VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out var store) ||
-                store == null)
+            if (
+                !VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out var store)
+                || store == null
+            )
             {
                 SetStatus("Failed to create VRMXT materials store on Character root.");
                 return;
@@ -749,11 +888,14 @@ public sealed class VrmxtManagerAsset : Asset
                     continue;
                 }
 
-                if (!VrmxtMaterialsShaderAuthoring.TrySetShaderName(
+                if (
+                    !VrmxtMaterialsShaderAuthoring.TrySetShaderName(
                         store,
                         row.MaterialName,
                         row.ShaderName,
-                        out var error))
+                        out var error
+                    )
+                )
                 {
                     errors++;
                     Debug.LogWarning("VRMXT: shader apply skipped: " + error);
@@ -766,8 +908,12 @@ public sealed class VrmxtManagerAsset : Asset
             if (changed == 0)
             {
                 SetStatus(
-                    "No shader rows applied (pick shaders first). storePairs=" +
-                    store.Pairs.Count + " errors=" + errors + ".");
+                    "No shader rows applied (pick shaders first). storePairs="
+                        + store.Pairs.Count
+                        + " errors="
+                        + errors
+                        + "."
+                );
                 return;
             }
 
@@ -781,16 +927,36 @@ public sealed class VrmxtManagerAsset : Asset
                 store,
                 gltfJson,
                 pipeline,
-                resolveTexture);
-            // Snapshot non-texture props from live Character mats into the store (textures
-            // stay owned by Warudo Character Material Properties).
-            var snapped = VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(store, root);
-            var catalog = VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(Character, root, store);
+                resolveTexture,
+                null,
+                VrmxtMaterialsOverrideApplier.ShaderResolveProvider
+            );
+            // Snapshot live props; keep packed GLB textures, omit new unpackaged maps.
+            var snapped = VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(
+                store,
+                root
+            );
+            var catalog = VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(
+                Character,
+                root,
+                store
+            );
 
             SetStatus(
-                "Applied shaders: rows=" + changed + " live=" + applied +
-                " snapped=" + snapped + " catalog=" + catalog +
-                " errors=" + errors + " [" + Character.Name + "]");
+                "Applied shaders: rows="
+                    + changed
+                    + " live="
+                    + applied
+                    + " snapped="
+                    + snapped
+                    + " catalog="
+                    + catalog
+                    + " errors="
+                    + errors
+                    + " ["
+                    + Character.Name
+                    + "]"
+            );
         }
         catch (Exception e)
         {
@@ -819,7 +985,8 @@ public sealed class VrmxtManagerAsset : Asset
                 SetStatus(
                     Character != null
                         ? "'" + Character.Name + "' is not VRM 1.0."
-                        : "Select a VRM 1.0 Character.");
+                        : "Select a VRM 1.0 Character."
+                );
                 Broadcast();
                 return;
             }
@@ -836,7 +1003,12 @@ public sealed class VrmxtManagerAsset : Asset
                 return;
             }
 
-            if (!VrmxtCharacterSource.TryGetPersistentRelativePath(Character.Source, out var relativePath))
+            if (
+                !VrmxtCharacterSource.TryGetPersistentRelativePath(
+                    Character.Source,
+                    out var relativePath
+                )
+            )
             {
                 SetStatus("Character Source is not a local character:// .vrm.");
                 return;
@@ -859,14 +1031,19 @@ public sealed class VrmxtManagerAsset : Asset
             if (store == null)
             {
                 var bytes = await Context.PersistentDataManager.ReadFileBytesAsync(relativePath);
-                if (!GlbChunks.TryExtractJson(bytes, out var gltfJson) || string.IsNullOrEmpty(gltfJson))
+                if (
+                    !GlbChunks.TryExtractJson(bytes, out var gltfJson)
+                    || string.IsNullOrEmpty(gltfJson)
+                )
                 {
                     SetStatus("Failed to extract glTF JSON for clear.");
                     return;
                 }
 
-                if (!VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out store) ||
-                    store == null)
+                if (
+                    !VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out store)
+                    || store == null
+                )
                 {
                     SetStatus("Failed to attach VRMXT materials store.");
                     return;
@@ -878,14 +1055,25 @@ public sealed class VrmxtManagerAsset : Asset
 
             // Restore MToon/stock shaders snapped before first override apply (in-place mutate).
             var restored = VrmxtMaterialsStockShaders.Restore(root);
-            var catalog = VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(Character, root, store);
+            var catalog = VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(
+                Character,
+                root,
+                store
+            );
             // Do not re-attach/re-apply from source .vrm — that undoes Clear on patched files.
             await RefreshMaterialsAsync(reApplyOverrides: false, reattachFromFile: false);
 
             SetStatus(
-                "Cleared override JSON + restored stock shaders: pairs=" + pairCount +
-                " shadersRestored=" + restored + " catalog=" + catalog +
-                " [" + Character.Name + "].");
+                "Cleared override JSON + restored stock shaders: pairs="
+                    + pairCount
+                    + " shadersRestored="
+                    + restored
+                    + " catalog="
+                    + catalog
+                    + " ["
+                    + Character.Name
+                    + "]."
+            );
         }
         catch (Exception e)
         {
@@ -914,7 +1102,8 @@ public sealed class VrmxtManagerAsset : Asset
                 SetStatus(
                     Character != null
                         ? "'" + Character.Name + "' is not VRM 1.0."
-                        : "Select a VRM 1.0 Character.");
+                        : "Select a VRM 1.0 Character."
+                );
                 Broadcast();
                 return;
             }
@@ -931,7 +1120,12 @@ public sealed class VrmxtManagerAsset : Asset
                 return;
             }
 
-            if (!VrmxtCharacterSource.TryGetPersistentRelativePath(Character.Source, out var sourcePath))
+            if (
+                !VrmxtCharacterSource.TryGetPersistentRelativePath(
+                    Character.Source,
+                    out var sourcePath
+                )
+            )
             {
                 SetStatus("Character Source is not a local character:// .vrm.");
                 return;
@@ -958,8 +1152,13 @@ public sealed class VrmxtManagerAsset : Asset
             }
 
             SetStatus("Exporting to '" + paths.OutputRelativePath + "'...");
-            var sourceBytes = await Context.PersistentDataManager.ReadFileBytesAsync(paths.SourceRelativePath);
-            if (!GlbChunks.TryExtractJson(sourceBytes, out var gltfJson) || string.IsNullOrEmpty(gltfJson))
+            var sourceBytes = await Context.PersistentDataManager.ReadFileBytesAsync(
+                paths.SourceRelativePath
+            );
+            if (
+                !GlbChunks.TryExtractJson(sourceBytes, out var gltfJson)
+                || string.IsNullOrEmpty(gltfJson)
+            )
             {
                 SetStatus("Failed to extract glTF JSON from source.");
                 return;
@@ -978,24 +1177,40 @@ public sealed class VrmxtManagerAsset : Asset
                 return;
             }
 
-            if (!VrmxtPatchExport.TryRebuildGlb(
+            if (
+                !VrmxtPatchExport.TryRebuildGlb(
                     sourceBytes,
                     entries,
                     out var outputBytes,
-                    out var rewrite))
+                    out var rewrite
+                )
+            )
             {
                 SetStatus("Export failed: " + (rewrite?.Error ?? "unknown error"));
                 return;
             }
 
-            await Context.PersistentDataManager.WriteFileBytesAsync(paths.OutputRelativePath, outputBytes);
+            await Context.PersistentDataManager.WriteFileBytesAsync(
+                paths.OutputRelativePath,
+                outputBytes
+            );
 
-            var skipPart = rewrite.Skipped.Count > 0
-                ? " skipped=" + rewrite.Skipped.Count + " (" + string.Join("; ", rewrite.Skipped) + ")"
-                : string.Empty;
+            var skipPart =
+                rewrite.Skipped.Count > 0
+                    ? " skipped="
+                        + rewrite.Skipped.Count
+                        + " ("
+                        + string.Join("; ", rewrite.Skipped)
+                        + ")"
+                    : string.Empty;
             SetStatus(
-                "Exported '" + paths.OutputRelativePath + "' written=" + rewrite.WrittenCount +
-                skipPart + ".");
+                "Exported '"
+                    + paths.OutputRelativePath
+                    + "' written="
+                    + rewrite.WrittenCount
+                    + skipPart
+                    + "."
+            );
         }
         catch (Exception e)
         {

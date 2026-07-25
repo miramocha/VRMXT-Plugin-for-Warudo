@@ -71,10 +71,60 @@ namespace UniVRMXT.Vfx
                 return null;
             }
 
-            texture.wrapMode = TextureWrapMode.Clamp;
-            texture.filterMode = FilterMode.Bilinear;
+            ApplyGltfSampler(texture, textureIndex);
             _cache[textureIndex] = texture;
             return texture;
+        }
+
+        /// <summary>
+        /// Honor glTF <c>samplers[]</c> wrap/filter (default repeat). Hardcoding Clamp
+        /// broke tiled emission/dissolve masks that ship with non-identity ST.
+        /// </summary>
+        private void ApplyGltfSampler(Texture2D texture, int textureIndex)
+        {
+            if (texture == null)
+            {
+                return;
+            }
+
+            if (!GltfImageBytes.TryGetTextureSampler(
+                    _json,
+                    textureIndex,
+                    out var wrapS,
+                    out var wrapT,
+                    out var magFilter,
+                    out _))
+            {
+                texture.wrapModeU = TextureWrapMode.Repeat;
+                texture.wrapModeV = TextureWrapMode.Repeat;
+                texture.filterMode = FilterMode.Bilinear;
+                return;
+            }
+
+            texture.wrapModeU = ToUnityWrap(wrapS);
+            texture.wrapModeV = ToUnityWrap(wrapT);
+            texture.filterMode = ToUnityFilter(magFilter);
+        }
+
+        private static TextureWrapMode ToUnityWrap(int gltfWrap)
+        {
+            switch (gltfWrap)
+            {
+                case GltfImageBytes.WrapClampToEdge:
+                    return TextureWrapMode.Clamp;
+                case GltfImageBytes.WrapMirroredRepeat:
+                    return TextureWrapMode.Mirror;
+                case GltfImageBytes.WrapRepeat:
+                default:
+                    return TextureWrapMode.Repeat;
+            }
+        }
+
+        private static FilterMode ToUnityFilter(int gltfMagFilter)
+        {
+            return gltfMagFilter == GltfImageBytes.FilterNearest
+                ? FilterMode.Point
+                : FilterMode.Bilinear;
         }
 
         public Func<int, Texture> AsResolver()
