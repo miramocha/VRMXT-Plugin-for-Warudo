@@ -1,0 +1,33 @@
+{
+  "canonicalRepo": "VRMXT Plugin for Warudo",
+  "siblingRootHint": "Parent of VRMXT Plugin for Warudo (e.g. D:\\\\MiraGameDev)",
+  "sharedRules": [
+    "unity-csharp-style.mdc",
+    "unity-assets-and-meta.mdc",
+    "unity-runtime-safety.mdc",
+    "generated-and-submodules.mdc",
+    "handoff-and-git.mdc",
+    "unity-tests.mdc",
+    "unity-ui-toolkit.mdc"
+  ],
+  "sharedSkills": [
+    "validate-unity-meta"
+  ],
+  "neverSync": [
+    "unity-csharp-language.mdc",
+    "warudo-plugin-repository.mdc",
+    "ui-labels.mdc",
+    "player-repository.mdc",
+    "univrmxt-repository.mdc"
+  ],
+  "consumers": [
+    {
+      "name": "UniVRMXT",
+      "relativePath": "UniVRMXT"
+    },
+    {
+      "name": "VRMXT Unity Player",
+      "relativePath": "VRMXT Unity Player"
+    }
+  ]
+}

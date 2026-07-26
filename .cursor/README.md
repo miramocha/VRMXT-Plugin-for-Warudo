@@ -2,26 +2,45 @@
 
 Shared Unity coding and agent guidance for the VRMXT Plugin for Warudo Unity project.
 
-## Shared kit (from Extended-UniVRM)
+## Canonical shared kit (VRMXT Unity)
 
-Shared `unity-*.mdc` rules (except pin language), `handoff-and-git`,
-`generated-and-submodules`, and skill `validate-unity-meta` are synced from sibling
-[Extended-UniVRM](https://github.com/miramocha/Extended-UniVRM):
+This repo is the **canonical source** for shared Unity Cursor rules/skills used by sibling
+VRMXT Unity projects (UniVRMXT, VRMXT Unity Player).
+
+Extended-UniVRM is an **upstream UniVRM fork** — do not add `.cursor` rules/skills there.
+
+| Path | Role |
+|------|------|
+| `.cursor/shared-manifest.json` | Shared rule/skill names + consumer sibling paths |
+| `scripts/sync-vrmxt-cursor-shared.ps1` | Copy (or hard-link) shared files into consumers |
 
 ```powershell
-cd ../Extended-UniVRM
+# From VRMXT Plugin for Warudo root — dry-run (default)
+./scripts/sync-vrmxt-cursor-shared.ps1
+
+# Apply copies into listed consumers
 ./scripts/sync-vrmxt-cursor-shared.ps1 -Apply
 ```
 
-Manifest: `Extended-UniVRM/.cursor/shared-manifest.json`.
+### Shared (synced to UniVRMXT + Player)
 
-## Local only (do not overwrite via sync)
+- `unity-csharp-style.mdc`
+- `unity-assets-and-meta.mdc`
+- `unity-runtime-safety.mdc`
+- `generated-and-submodules.mdc`
+- `handoff-and-git.mdc`
+- `unity-tests.mdc`
+- `unity-ui-toolkit.mdc`
+- skill `validate-unity-meta`
+
+### Local only (never synced)
 
 | File | Role |
 |------|------|
 | `rules/unity-csharp-language.mdc` | Unity **2021.3** pin |
 | `rules/warudo-plugin-repository.mdc` | Host layout, Warudo Mod Tool constraints |
 | `rules/ui-labels.mdc` | User-facing VRMXT label voice (also keep aligned with Warudo Shader Plugins / Blender) |
+| `agents/fresh-reviewer.md` | Warudo-specific independent reviewer |
 
 ## Project assumptions
 
@@ -30,9 +49,7 @@ Manifest: `Extended-UniVRM/.cursor/shared-manifest.json`.
 - Tests are NUnit EditMode assemblies colocated with owning code
 - C# and documentation use LF line endings
 
-## Deliberately not synced here
+## Deliberately not included
 
-- Extended-UniVRM package paths (`Packages/UniGLTF`, `Packages/VRM`, `Packages/VRM10`)
-- UniVRM fork-upstream rules and `UniGLTF.TestRunner` host notes
 - CSharpier/Prettier and editor-agent workflows not installed in this repository
 - GridDungeon UITK / backlog / story Cursor kits
