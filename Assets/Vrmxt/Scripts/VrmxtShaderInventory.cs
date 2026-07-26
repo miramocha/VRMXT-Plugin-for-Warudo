@@ -14,8 +14,10 @@ public static class VrmxtShaderInventory
     public static Func<IEnumerable<string>> ExtraNamesProvider { get; set; }
 
     /// <summary>
-    /// Poiyomi alt shaders deferred to a separate Warudo plugin (not in Lite/Full Toon SKU).
+    /// Poiyomi alt shaders still deferred (not in Toon or Fur BIRP SKUs).
     /// Keep out of Manager shader autocomplete even if an old mod still loads them.
+    /// Lil Fur / Lil Fur Two Pass ship with <c>mira.shaders.poiyomi.birp</c>
+    /// and are no longer filtered here.
     /// </summary>
     private static bool IsDeferredPoiyomiAltShader(string name)
     {
@@ -24,13 +26,7 @@ public static class VrmxtShaderInventory
             return false;
         }
 
-        // Lil Fur / Lil Fur Two Pass (Toon or Pro).
-        if (name.IndexOf("Lil Fur", StringComparison.OrdinalIgnoreCase) >= 0)
-        {
-            return true;
-        }
-
-        // World variant (not main Toon).
+        // World variant (not main Toon / Lil Fur).
         if (name.IndexOf("Poiyomi Toon World", StringComparison.OrdinalIgnoreCase) >= 0 ||
             name.IndexOf("Poiyomi Pro World", StringComparison.OrdinalIgnoreCase) >= 0)
         {
