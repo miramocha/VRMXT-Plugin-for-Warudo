@@ -2,12 +2,26 @@
 
 Shared Unity coding and agent guidance for the VRMXT Plugin for Warudo Unity project.
 
-Generic rules (`unity-*.mdc`), handoff/generated rules, and the `validate-unity-meta`
-skill are copied from Extended-UniVRM so collaborators get the same Cursor project
-guidance on clone. Repo-specific layout lives in `rules/warudo-plugin-repository.mdc`.
-User-facing VRMXT label voice lives in `rules/ui-labels.mdc` (sentence case across
-Warudo / Blender / catalogs; not part of deslop). Keep in sync with sibling copies
-in Warudo Shader Plugins and VRMXT-Extension-for-Blender.
+## Shared kit (from Extended-UniVRM)
+
+Shared `unity-*.mdc` rules (except pin language), `handoff-and-git`,
+`generated-and-submodules`, and skill `validate-unity-meta` are synced from sibling
+[Extended-UniVRM](https://github.com/miramocha/Extended-UniVRM):
+
+```powershell
+cd ../Extended-UniVRM
+./scripts/sync-vrmxt-cursor-shared.ps1 -Apply
+```
+
+Manifest: `Extended-UniVRM/.cursor/shared-manifest.json`.
+
+## Local only (do not overwrite via sync)
+
+| File | Role |
+|------|------|
+| `rules/unity-csharp-language.mdc` | Unity **2021.3** pin |
+| `rules/warudo-plugin-repository.mdc` | Host layout, Warudo Mod Tool constraints |
+| `rules/ui-labels.mdc` | User-facing VRMXT label voice (also keep aligned with Warudo Shader Plugins / Blender) |
 
 ## Project assumptions
 
@@ -16,8 +30,9 @@ in Warudo Shader Plugins and VRMXT-Extension-for-Blender.
 - Tests are NUnit EditMode assemblies colocated with owning code
 - C# and documentation use LF line endings
 
-## Deliberately not copied
+## Deliberately not synced here
 
 - Extended-UniVRM package paths (`Packages/UniGLTF`, `Packages/VRM`, `Packages/VRM10`)
-- UniVRM-specific test runner entry points and package consumer assumptions
+- UniVRM fork-upstream rules and `UniGLTF.TestRunner` host notes
 - CSharpier/Prettier and editor-agent workflows not installed in this repository
+- GridDungeon UITK / backlog / story Cursor kits

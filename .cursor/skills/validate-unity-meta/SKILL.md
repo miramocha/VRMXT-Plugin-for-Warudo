@@ -19,7 +19,7 @@ python .cursor/skills/validate-unity-meta/scripts/validate_unity_meta.py
 Scan selected paths:
 
 ```powershell
-python .cursor/skills/validate-unity-meta/scripts/validate_unity_meta.py Assets
+python .cursor/skills/validate-unity-meta/scripts/validate_unity_meta.py Packages/VRM10/Runtime
 ```
 
 Use `--strict-warnings` after Unity imports new assets. Use `--no-pairing` when only GUID
