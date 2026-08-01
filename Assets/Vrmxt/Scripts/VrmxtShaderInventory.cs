@@ -26,7 +26,13 @@ public static class VrmxtShaderInventory
 
         // World / Two Pass (not main Toon / Lil Fur).
         if (name.IndexOf("Poiyomi Toon World", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            name.IndexOf("Poiyomi Pro World", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            name.IndexOf("Poiyomi Pro World", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return true;
+        }
+
+        // Poiyomi only — lilToon uses TwoPass (no space) and must stay.
+        if (name.IndexOf("poiyomi", StringComparison.OrdinalIgnoreCase) >= 0 &&
             name.IndexOf("Two Pass", StringComparison.OrdinalIgnoreCase) >= 0)
         {
             return true;
