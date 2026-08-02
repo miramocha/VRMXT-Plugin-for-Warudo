@@ -63,8 +63,17 @@ namespace UniVRMXT.MaterialsOverride
         /// <see cref="VrmxtMaterialsOverridePair.OverrideMaterial"/>. Sibling unity variants
         /// and other engines stay intact. Fills <c>variant</c> from the active RP when creating
         /// a new slot (see <see cref="VrmxtMaterialsOverrideExporter.ResolveUnityVariant"/>).
+        /// <para>
+        /// When <paramref name="includeTextureProperties"/> is true (Editor Transfer), texture
+        /// rows use placeholder indices for later <c>PrepareTextures</c> remapping. Pass false
+        /// for patch hosts that cannot add GLB images (same as
+        /// <see cref="SyncPropertiesFromLiveMaterials"/> with <c>includePackedTextures: false</c>).
+        /// </para>
         /// </summary>
-        public static void SyncUnityOverrideFromMaterial(VrmxtMaterialsOverridePair pair)
+        public static void SyncUnityOverrideFromMaterial(
+            VrmxtMaterialsOverridePair pair,
+            bool includeTextureProperties = true
+        )
         {
             if (pair?.OverrideMaterial == null || pair.OverrideMaterial.shader == null)
             {
@@ -195,7 +204,10 @@ namespace UniVRMXT.MaterialsOverride
                 existingProvider
                 ?? new MaterialProvider(DefaultProviderId, ResolvePackageVersion());
 
-            var properties = CaptureProperties(material, pair.SourceMaterial);
+            var captured = CaptureProperties(material, pair.SourceMaterial);
+            var properties = includeTextureProperties
+                ? captured
+                : WithoutTextureProperties(captured);
 
             var unityMaterial = new UnityMaterialOverride(
                 VrmxtMaterialsOverride.UnityMaterialIdTypeShaderName,

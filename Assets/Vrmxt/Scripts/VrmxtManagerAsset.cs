@@ -740,26 +740,7 @@ public sealed class VrmxtManagerAsset : Asset
     [HiddenIf(nameof(HideVrmxtControls))]
     public void OpenMaterialTemplatesFolder()
     {
-#if UNITY_EDITOR
-        var abs = System.IO.Path.GetFullPath(
-            System.IO.Path.Combine(
-                Application.dataPath,
-                "StreamingAssets",
-                "VRMXT",
-                "MaterialTemplates"
-            )
-        );
-        if (!System.IO.Directory.Exists(abs))
-        {
-            System.IO.Directory.CreateDirectory(abs);
-            UnityEditor.AssetDatabase.Refresh();
-        }
-
-        UnityEditor.EditorUtility.RevealInFinder(abs);
-        SetStatus("Opened " + abs);
-#else
         OpenWarudoMaterialTemplatesFolderAsync().Forget();
-#endif
     }
 
     private async UniTaskVoid OpenWarudoMaterialTemplatesFolderAsync()
@@ -980,9 +961,9 @@ public sealed class VrmxtManagerAsset : Asset
 
     private async UniTaskVoid ApplyShaderOverridesAsync()
     {
-        if (_applyInProgress || _transferInProgress || _clearInProgress)
+        if (_applyInProgress || _transferInProgress || _clearInProgress || _exportInProgress)
         {
-            SetStatus("Busy — wait for Apply/Transfer/Clear to finish.");
+            SetStatus("Busy — wait for Apply/Transfer/Clear/Export to finish.");
             return;
         }
 
@@ -1155,9 +1136,9 @@ public sealed class VrmxtManagerAsset : Asset
 
     private async UniTaskVoid TransferFromTemplatesAsync(VrmxtMaterialShaderRow singleRow)
     {
-        if (_transferInProgress || _applyInProgress || _clearInProgress)
+        if (_transferInProgress || _applyInProgress || _clearInProgress || _exportInProgress)
         {
-            SetStatus("Busy — wait for Apply/Transfer/Clear to finish.");
+            SetStatus("Busy — wait for Apply/Transfer/Clear/Export to finish.");
             return;
         }
 
@@ -1337,7 +1318,9 @@ public sealed class VrmxtManagerAsset : Asset
                 resolveShader
             );
 
-            // Re-assert clear modes after Apply (Apply won't null slots without texture ownership).
+            // Clear all: null every texture slot after Apply (no texture ownership in JSON).
+            // Clear if set: already cleared assigned slots before Apply; do not wipe packed
+            // maps Apply just restored onto previously empty slots.
             for (var i = 0; i < materials.Length; i++)
             {
                 var row = materials[i];
@@ -1354,9 +1337,9 @@ public sealed class VrmxtManagerAsset : Asset
                     row.TextureHandling
                 );
                 if (
-                    string.Equals(
+                    !string.Equals(
                         mode,
-                        VrmxtMaterialsTemplateTransfer.TextureHandlingKeepPacked,
+                        VrmxtMaterialsTemplateTransfer.TextureHandlingClearAll,
                         StringComparison.Ordinal
                     )
                 )
@@ -1438,9 +1421,9 @@ public sealed class VrmxtManagerAsset : Asset
 
     private async UniTaskVoid ClearAllMaterialOverridesAsync()
     {
-        if (_clearInProgress || _applyInProgress || _transferInProgress)
+        if (_clearInProgress || _applyInProgress || _transferInProgress || _exportInProgress)
         {
-            SetStatus("Busy — wait for Apply/Transfer/Clear to finish.");
+            SetStatus("Busy — wait for Apply/Transfer/Clear/Export to finish.");
             return;
         }
 
@@ -1555,9 +1538,9 @@ public sealed class VrmxtManagerAsset : Asset
 
     private async UniTaskVoid ExportAsync()
     {
-        if (_exportInProgress)
+        if (_exportInProgress || _applyInProgress || _transferInProgress || _clearInProgress)
         {
-            SetStatus("Export already in progress.");
+            SetStatus("Busy — wait for Apply/Transfer/Clear/Export to finish.");
             return;
         }
 

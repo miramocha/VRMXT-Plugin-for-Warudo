@@ -60,7 +60,8 @@ public static class VrmxtUnityMaterialYaml
         ParseFloatSection(yaml, "m_Floats:", properties);
         ParseFloatSection(yaml, "m_Ints:", properties);
         ParseColorSection(yaml, properties);
-        ParseKeywordSection(yaml, properties);
+        ParseKeywordSection(yaml, "m_ValidKeywords:", true, properties);
+        ParseKeywordSection(yaml, "m_InvalidKeywords:", false, properties);
         ParseTexEnvNames(yaml, textureSlotNames);
         return true;
     }
@@ -137,9 +138,14 @@ public static class VrmxtUnityMaterialYaml
         }
     }
 
-    private static void ParseKeywordSection(string yaml, List<VrmxtMaterialProperty> properties)
+    private static void ParseKeywordSection(
+        string yaml,
+        string sectionHeader,
+        bool enabled,
+        List<VrmxtMaterialProperty> properties
+    )
     {
-        foreach (var line in EnumerateSectionLines(yaml, "m_ValidKeywords:"))
+        foreach (var line in EnumerateSectionLines(yaml, sectionHeader))
         {
             var match = ListKeyword.Match(line);
             if (!match.Success)
@@ -153,7 +159,7 @@ public static class VrmxtUnityMaterialYaml
                     VrmxtMaterialsOverride.TargetTypeShaderFeature,
                     null,
                     null,
-                    true,
+                    enabled,
                     null
                 )
             );
