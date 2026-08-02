@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using UniVRMXT.Format;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UniVRMXT.Format;
 
 namespace UniVRMXT.MaterialsOverride
 {
@@ -30,6 +30,13 @@ namespace UniVRMXT.MaterialsOverride
         public static Func<string, Shader> ShaderResolveProvider { get; set; }
 
         /// <summary>
+        /// Optional host pipeline detection (e.g. Warudo
+        /// <c>DetectActivePipelineForWarudo</c>). Used by Transfer / authoring paths that
+        /// call <see cref="DetectActivePipeline"/> so hosts can match Apply's RP choice.
+        /// </summary>
+        public static Func<RenderPipelineVariant> ActivePipelineProvider { get; set; }
+
+        /// <summary>
         /// Attach (if needed) and apply in one call. Prefer the
         /// <see cref="Apply(GameObject,VrmxtMaterialsOverrideInstance,string,RenderPipelineVariant,Func{int,Texture},Func{MaterialProvider,bool},Func{string,Shader})"/>
         /// overload when a <see cref="VrmxtMaterialsOverrideInstance"/> already exists (e.g.
@@ -41,7 +48,8 @@ namespace UniVRMXT.MaterialsOverride
             RenderPipelineVariant activePipeline,
             Func<int, Texture> resolveTexture = null,
             Func<MaterialProvider, bool> isProviderMismatch = null,
-            Func<string, Shader> resolveShader = null)
+            Func<string, Shader> resolveShader = null
+        )
         {
             VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out var store);
             return Apply(
@@ -51,7 +59,8 @@ namespace UniVRMXT.MaterialsOverride
                 activePipeline,
                 resolveTexture,
                 isProviderMismatch,
-                resolveShader);
+                resolveShader
+            );
         }
 
         /// <summary>
@@ -67,7 +76,8 @@ namespace UniVRMXT.MaterialsOverride
             RenderPipelineVariant activePipeline,
             Func<int, Texture> resolveTexture = null,
             Func<MaterialProvider, bool> isProviderMismatch = null,
-            Func<string, Shader> resolveShader = null)
+            Func<string, Shader> resolveShader = null
+        )
         {
             if (root == null || store == null)
             {
@@ -97,8 +107,13 @@ namespace UniVRMXT.MaterialsOverride
                     continue;
                 }
 
-                if (!UnityOverrideSelector.TrySelectUnityEngineOverride(
-                        extension, activePipeline, out var engineOverride))
+                if (
+                    !UnityOverrideSelector.TrySelectUnityEngineOverride(
+                        extension,
+                        activePipeline,
+                        out var engineOverride
+                    )
+                )
                 {
                     continue;
                 }
@@ -109,68 +124,80 @@ namespace UniVRMXT.MaterialsOverride
                     continue;
                 }
 
-                var shader = ResolveShader(unityOverride.ShaderName, resolveShader);
-                if (shader == null)
+                if (ResolveShader(unityOverride.ShaderName, resolveShader) == null)
                 {
                     // Shader not present in this build — keep / restore stock import.
                     Debug.LogWarning(
-                        $"VRMXT_materials_override: shader '{unityOverride.ShaderName}' unresolved for " +
-                        $"material '{entry.MaterialName}'. Leaving stock material.");
+                        $"VRMXT_materials_override: shader '{unityOverride.ShaderName}' unresolved for "
+                            + $"material '{entry.MaterialName}'. Leaving stock material."
+                    );
                     if (entry.SourceMaterial != null)
                     {
                         VrmxtMaterialsOverrideAuthoring.RestoreSourceMaterial(
                             root,
                             entry.MaterialName,
-                            entry.SourceMaterial);
+                            entry.SourceMaterial,
+                            destroyPreviewMaterials: true,
+                            overrideMaterial: entry.OverrideMaterial,
+                            liveAppliedOverride: entry.LiveAppliedOverride
+                        );
                     }
 
                     continue;
                 }
 
-                WarnOnProviderMismatch(entry.MaterialName, unityOverride.Provider, isProviderMismatch);
+                WarnOnProviderMismatch(
+                    entry.MaterialName,
+                    unityOverride.Provider,
+                    isProviderMismatch
+                );
 
                 var hasMtoon = TryFindSiblingMtoonForPair(gltfRoot, entry, out var mtoon);
 
-                // Drop stale DontSave authoring previews so we apply onto stock import mats.
+                // Put Source back on slots (drops authoring Override Material assets or
+                // leftover DontSave previews) so runtime Apply mutates stock import mats.
                 if (entry.SourceMaterial != null)
                 {
                     VrmxtMaterialsOverrideAuthoring.RestoreSourceMaterial(
                         root,
                         entry.MaterialName,
-                        entry.SourceMaterial);
+                        entry.SourceMaterial,
+                        destroyPreviewMaterials: true,
+                        overrideMaterial: entry.OverrideMaterial,
+                        liveAppliedOverride: entry.LiveAppliedOverride
+                    );
                 }
 
                 var appliedToAny = false;
-                foreach (var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
-                             root, entry.MaterialName))
+                foreach (
+                    var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                        root,
+                        entry.MaterialName
+                    )
+                )
                 {
                     if (material == null || (material.hideFlags & HideFlags.DontSave) != 0)
                     {
                         continue;
                     }
 
-                    // Import / runtime: mutate materials the host already built. Scene
-                    // authoring uses DontSave clones via Authoring instead — those must not
-                    // be written onto imported assets (they do not serialize → pink/missing).
-                    var previousShader = material.shader;
-                    material.shader = shader;
-                    if (!ReferenceEquals(previousShader, shader))
-                    {
-                        ClearUnlistedTextureProperties(
+                    // Runtime / Player: mutate host-built materials in place. Editor
+                    // authoring assigns Override Material *assets* onto slots via
+                    // VrmxtMaterialsOverrideAuthoring — skip DontSave leftovers here.
+                    if (
+                        !TryWriteUnityOverrideOntoMaterial(
                             material,
-                            shader,
-                            engineOverride.Properties,
-                            engineOverride.Bindings,
+                            engineOverride,
                             hasMtoon,
-                            mtoon);
+                            mtoon,
+                            resolveTexture,
+                            resolveShader
+                        )
+                    )
+                    {
+                        continue;
                     }
 
-                    ApplyProperties(material, engineOverride.Properties, resolveTexture);
-                    ApplyBindings(material, engineOverride.Bindings, hasMtoon, mtoon, resolveTexture);
-                    // Thry/Poiyomi _Mode on_value_actions (render_queue / RenderType) only run
-                    // in the Editor inspector — runtime SetFloat("_Mode") alone leaves the
-                    // stock MToon queue. Additive glitter/emission then draws wrong / invisible.
-                    ApplyUnityRenderStateFromMode(material);
                     appliedToAny = true;
                 }
 
@@ -181,6 +208,109 @@ namespace UniVRMXT.MaterialsOverride
             }
 
             return applied;
+        }
+
+        /// <summary>
+        /// Write the active-pipeline unity override from <paramref name="pair"/> onto
+        /// <paramref name="material"/> (shader, properties, bindings, render state).
+        /// Does not touch renderers. Returns false when the slot is unselectable or the
+        /// shader cannot resolve.
+        /// </summary>
+        public static bool TryWritePairOverrideOntoMaterial(
+            Material material,
+            VrmxtMaterialsOverridePair pair,
+            string gltfJson,
+            RenderPipelineVariant activePipeline,
+            Func<int, Texture> resolveTexture = null,
+            Func<string, Shader> resolveShader = null
+        )
+        {
+            if (material == null || pair == null)
+            {
+                return false;
+            }
+
+            if (!VrmxtMaterialsOverride.TryParse(pair.ExtensionJson, out var extension))
+            {
+                return false;
+            }
+
+            if (
+                !UnityOverrideSelector.TrySelectUnityEngineOverride(
+                    extension,
+                    activePipeline,
+                    out var engineOverride
+                )
+            )
+            {
+                return false;
+            }
+
+            var gltfRoot = TryParseGltfRoot(gltfJson);
+            var hasMtoon = TryFindSiblingMtoonForPair(gltfRoot, pair, out var mtoon);
+            return TryWriteUnityOverrideOntoMaterial(
+                material,
+                engineOverride,
+                hasMtoon,
+                mtoon,
+                resolveTexture,
+                resolveShader
+            );
+        }
+
+        /// <summary>
+        /// Write a selected unity engine override onto an existing <see cref="Material"/>.
+        /// Sets shader, clears unlisted textures when the shader changes, applies
+        /// <c>properties</c> then <c>bindings</c>, then Unity render state from
+        /// <c>_Mode</c>. Returns false when the shader cannot resolve.
+        /// </summary>
+        public static bool TryWriteUnityOverrideOntoMaterial(
+            Material material,
+            VrmxtMaterialEngineOverride engineOverride,
+            bool hasMtoon,
+            JObject mtoon,
+            Func<int, Texture> resolveTexture,
+            Func<string, Shader> resolveShader = null
+        )
+        {
+            if (material == null || engineOverride == null)
+            {
+                return false;
+            }
+
+            var unityOverride = engineOverride.Material as UnityMaterialOverride;
+            if (unityOverride == null)
+            {
+                return false;
+            }
+
+            var shader = ResolveShader(unityOverride.ShaderName, resolveShader);
+            if (shader == null)
+            {
+                return false;
+            }
+
+            var previousShader = material.shader;
+            material.shader = shader;
+            if (!ReferenceEquals(previousShader, shader))
+            {
+                ClearUnlistedTextureProperties(
+                    material,
+                    shader,
+                    engineOverride.Properties,
+                    engineOverride.Bindings,
+                    hasMtoon,
+                    mtoon
+                );
+            }
+
+            ApplyProperties(material, engineOverride.Properties, resolveTexture);
+            ApplyBindings(material, engineOverride.Bindings, hasMtoon, mtoon, resolveTexture);
+            // Thry/Poiyomi _Mode on_value_actions (render_queue / RenderType) only run
+            // in the Editor inspector — runtime SetFloat("_Mode") alone leaves the
+            // stock MToon queue. Additive glitter/emission then draws wrong / invisible.
+            ApplyUnityRenderStateFromMode(material);
+            return true;
         }
 
         /// <summary>
@@ -213,11 +343,15 @@ namespace UniVRMXT.MaterialsOverride
         public const string OriginalShaderTag = "OriginalShader";
 
         /// <summary>
-        /// Resolve a shader by name: per-call <paramref name="resolveShader"/>, else
-        /// <see cref="ShaderResolveProvider"/>, else <see cref="Shader.Find"/>.
-        /// Each step is tried only when the previous returns null.
+        /// Resolve a shader by name.
+        /// When <paramref name="resolveShader"/> is provided, its result is final
+        /// (including null = deny; no provider or <see cref="Shader.Find"/> fallback).
+        /// When omitted: <see cref="ShaderResolveProvider"/>, else <see cref="Shader.Find"/>.
         /// </summary>
-        public static Shader ResolveShader(string shaderName, Func<string, Shader> resolveShader = null)
+        public static Shader ResolveShader(
+            string shaderName,
+            Func<string, Shader> resolveShader = null
+        )
         {
             if (string.IsNullOrEmpty(shaderName))
             {
@@ -226,15 +360,10 @@ namespace UniVRMXT.MaterialsOverride
 
             if (resolveShader != null)
             {
-                var fromCaller = resolveShader(shaderName);
-                if (fromCaller != null)
-                {
-                    return fromCaller;
-                }
+                return resolveShader(shaderName);
             }
 
-            if (ShaderResolveProvider != null &&
-                !ReferenceEquals(resolveShader, ShaderResolveProvider))
+            if (ShaderResolveProvider != null)
             {
                 var fromProvider = ShaderResolveProvider(shaderName);
                 if (fromProvider != null)
@@ -257,6 +386,11 @@ namespace UniVRMXT.MaterialsOverride
         /// </summary>
         public static RenderPipelineVariant DetectActivePipeline()
         {
+            if (ActivePipelineProvider != null)
+            {
+                return ActivePipelineProvider();
+            }
+
             var pipelineAsset = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
             if (pipelineAsset == null)
             {
@@ -271,8 +405,10 @@ namespace UniVRMXT.MaterialsOverride
                 return RenderPipelineVariant.Urp;
             }
 
-            if (label.IndexOf("HDRenderPipeline", StringComparison.Ordinal) >= 0 ||
-                label.IndexOf("HDRender", StringComparison.Ordinal) >= 0)
+            if (
+                label.IndexOf("HDRenderPipeline", StringComparison.Ordinal) >= 0
+                || label.IndexOf("HDRender", StringComparison.Ordinal) >= 0
+            )
             {
                 return RenderPipelineVariant.Hdrp;
             }
@@ -285,7 +421,10 @@ namespace UniVRMXT.MaterialsOverride
         /// renderers whose name matches <paramref name="materialName"/> (glTF material
         /// name, with a defensive check for Unity's " (Instance)" suffix).
         /// </summary>
-        public static IEnumerable<Material> FindMaterialsByName(GameObject root, string materialName)
+        public static IEnumerable<Material> FindMaterialsByName(
+            GameObject root,
+            string materialName
+        )
         {
             if (root == null || string.IsNullOrEmpty(materialName))
             {
@@ -323,7 +462,8 @@ namespace UniVRMXT.MaterialsOverride
         private static void WarnOnProviderMismatch(
             string materialName,
             MaterialProvider provider,
-            Func<MaterialProvider, bool> isProviderMismatch)
+            Func<MaterialProvider, bool> isProviderMismatch
+        )
         {
             if (provider == null || isProviderMismatch == null)
             {
@@ -333,16 +473,22 @@ namespace UniVRMXT.MaterialsOverride
             if (isProviderMismatch(provider))
             {
                 Debug.LogWarning(
-                    $"VRMXT_materials_override: provider '{provider.Id}'" +
-                    (string.IsNullOrEmpty(provider.Version) ? string.Empty : $" {provider.Version}") +
-                    $" for material '{materialName}' does not match the resolved package. Applying anyway (provider is advisory).");
+                    $"VRMXT_materials_override: provider '{provider.Id}'"
+                        + (
+                            string.IsNullOrEmpty(provider.Version)
+                                ? string.Empty
+                                : $" {provider.Version}"
+                        )
+                        + $" for material '{materialName}' does not match the resolved package. Applying anyway (provider is advisory)."
+                );
             }
         }
 
         private static void ApplyProperties(
             Material material,
             IReadOnlyList<VrmxtMaterialProperty> properties,
-            Func<int, Texture> resolveTexture)
+            Func<int, Texture> resolveTexture
+        )
         {
             if (properties == null)
             {
@@ -377,7 +523,8 @@ namespace UniVRMXT.MaterialsOverride
                             property.Name,
                             property.TextureIndex,
                             property.VectorValue,
-                            resolveTexture);
+                            resolveTexture
+                        );
                         break;
 
                     case VrmxtMaterialsOverride.TargetTypeShaderFeature:
@@ -392,7 +539,8 @@ namespace UniVRMXT.MaterialsOverride
             IReadOnlyList<VrmxtMaterialBinding> bindings,
             bool hasMtoon,
             JObject mtoon,
-            Func<int, Texture> resolveTexture)
+            Func<int, Texture> resolveTexture
+        )
         {
             // Base-spec rule 16: no sibling VRMC_materials_mtoon extension at all means
             // every binding on this material is ignored, not defaulted.
@@ -411,14 +559,24 @@ namespace UniVRMXT.MaterialsOverride
             Material material,
             VrmxtMaterialBinding binding,
             JObject mtoon,
-            Func<int, Texture> resolveTexture)
+            Func<int, Texture> resolveTexture
+        )
         {
             if (binding == null || string.IsNullOrEmpty(binding.Target))
             {
                 return;
             }
 
-            if (!TryResolveMtoonSource(binding.Source, mtoon, out var scalar, out var vector, out var textureIndex, out var category))
+            if (
+                !TryResolveMtoonSource(
+                    binding.Source,
+                    mtoon,
+                    out var scalar,
+                    out var vector,
+                    out var textureIndex,
+                    out var category
+                )
+            )
             {
                 // Unknown or unresolvable source (e.g. no texture set): ignore per rules 16/24.
                 return;
@@ -456,9 +614,18 @@ namespace UniVRMXT.MaterialsOverride
             }
         }
 
-        private static void ApplyVector(Material material, string target, IReadOnlyList<float> values)
+        private static void ApplyVector(
+            Material material,
+            string target,
+            IReadOnlyList<float> values
+        )
         {
-            if (values == null || values.Count == 0 || material == null || string.IsNullOrEmpty(target))
+            if (
+                values == null
+                || values.Count == 0
+                || material == null
+                || string.IsNullOrEmpty(target)
+            )
             {
                 return;
             }
@@ -473,7 +640,8 @@ namespace UniVRMXT.MaterialsOverride
                 {
                     material.SetColor(
                         target,
-                        new Color(values[0], values[1], values[2], values[3]));
+                        new Color(values[0], values[1], values[2], values[3])
+                    );
                 }
                 else if (values.Count == 3)
                 {
@@ -487,7 +655,9 @@ namespace UniVRMXT.MaterialsOverride
                             values[0],
                             values.Count > 1 ? values[1] : 0f,
                             values.Count > 2 ? values[2] : 0f,
-                            values.Count > 3 ? values[3] : 1f));
+                            values.Count > 3 ? values[3] : 1f
+                        )
+                    );
                 }
 
                 return;
@@ -499,7 +669,9 @@ namespace UniVRMXT.MaterialsOverride
                     values[0],
                     values.Count > 1 ? values[1] : 0f,
                     values.Count > 2 ? values[2] : 0f,
-                    values.Count > 3 ? values[3] : 0f));
+                    values.Count > 3 ? values[3] : 0f
+                )
+            );
         }
 
         private static bool IsShaderColorProperty(Material material, string propertyName)
@@ -513,7 +685,13 @@ namespace UniVRMXT.MaterialsOverride
             var count = shader.GetPropertyCount();
             for (var i = 0; i < count; i++)
             {
-                if (!string.Equals(shader.GetPropertyName(i), propertyName, StringComparison.Ordinal))
+                if (
+                    !string.Equals(
+                        shader.GetPropertyName(i),
+                        propertyName,
+                        StringComparison.Ordinal
+                    )
+                )
                 {
                     continue;
                 }
@@ -528,7 +706,8 @@ namespace UniVRMXT.MaterialsOverride
             Material material,
             string target,
             int? textureIndex,
-            Func<int, Texture> resolveTexture)
+            Func<int, Texture> resolveTexture
+        )
         {
             ApplyTexture(material, target, textureIndex, null, resolveTexture);
         }
@@ -538,7 +717,8 @@ namespace UniVRMXT.MaterialsOverride
             string target,
             int? textureIndex,
             IReadOnlyList<float> textureTransform,
-            Func<int, Texture> resolveTexture)
+            Func<int, Texture> resolveTexture
+        )
         {
             if (!textureIndex.HasValue || resolveTexture == null)
             {
@@ -551,13 +731,14 @@ namespace UniVRMXT.MaterialsOverride
                 if (!CanAssignTextureToProperty(material, target, texture))
                 {
                     Debug.LogWarning(
-                        "VRMXT_materials_override: skip texture '" +
-                        target +
-                        "' on '" +
-                        (material != null ? material.name : "?") +
-                        "' — dimension mismatch (tex=" +
-                        texture.dimension +
-                        ").");
+                        "VRMXT_materials_override: skip texture '"
+                            + target
+                            + "' on '"
+                            + (material != null ? material.name : "?")
+                            + "' — dimension mismatch (tex="
+                            + texture.dimension
+                            + ")."
+                    );
                     return;
                 }
 
@@ -567,13 +748,14 @@ namespace UniVRMXT.MaterialsOverride
             }
 
             Debug.LogWarning(
-                "VRMXT_materials_override: texture property '" +
-                target +
-                "' index=" +
-                textureIndex.Value +
-                " unresolved on '" +
-                (material != null ? material.name : "?") +
-                "' (RememberTextures miss / out of range).");
+                "VRMXT_materials_override: texture property '"
+                    + target
+                    + "' index="
+                    + textureIndex.Value
+                    + " unresolved on '"
+                    + (material != null ? material.name : "?")
+                    + "' (RememberTextures miss / out of range)."
+            );
         }
 
         /// <summary>
@@ -583,26 +765,28 @@ namespace UniVRMXT.MaterialsOverride
         private static void ApplyTextureTransform(
             Material material,
             string target,
-            IReadOnlyList<float> textureTransform)
+            IReadOnlyList<float> textureTransform
+        )
         {
-            if (material == null ||
-                string.IsNullOrEmpty(target) ||
-                textureTransform == null ||
-                textureTransform.Count < 2 ||
-                !material.HasProperty(target))
+            if (
+                material == null
+                || string.IsNullOrEmpty(target)
+                || textureTransform == null
+                || textureTransform.Count < 2
+                || !material.HasProperty(target)
+            )
             {
                 return;
             }
 
-            material.SetTextureScale(
-                target,
-                new Vector2(textureTransform[0], textureTransform[1]));
+            material.SetTextureScale(target, new Vector2(textureTransform[0], textureTransform[1]));
 
             if (textureTransform.Count >= 4)
             {
                 material.SetTextureOffset(
                     target,
-                    new Vector2(textureTransform[2], textureTransform[3]));
+                    new Vector2(textureTransform[2], textureTransform[3])
+                );
             }
         }
 
@@ -614,7 +798,8 @@ namespace UniVRMXT.MaterialsOverride
         private static bool CanAssignTextureToProperty(
             Material material,
             string propertyName,
-            Texture texture)
+            Texture texture
+        )
         {
             if (material == null || texture == null || string.IsNullOrEmpty(propertyName))
             {
@@ -635,7 +820,13 @@ namespace UniVRMXT.MaterialsOverride
             var count = shader.GetPropertyCount();
             for (var i = 0; i < count; i++)
             {
-                if (!string.Equals(shader.GetPropertyName(i), propertyName, StringComparison.Ordinal))
+                if (
+                    !string.Equals(
+                        shader.GetPropertyName(i),
+                        propertyName,
+                        StringComparison.Ordinal
+                    )
+                )
                 {
                     continue;
                 }
@@ -664,7 +855,8 @@ namespace UniVRMXT.MaterialsOverride
             IReadOnlyList<VrmxtMaterialProperty> properties,
             IReadOnlyList<VrmxtMaterialBinding> bindings,
             bool hasMtoon,
-            JObject mtoon)
+            JObject mtoon
+        )
         {
             if (material == null || shader == null)
             {
@@ -676,8 +868,7 @@ namespace UniVRMXT.MaterialsOverride
                 return;
             }
 
-                var covered = CollectCoveredTextureTargets(properties, bindings, hasMtoon, mtoon);
-            var clearedCritical = new List<string>();
+            var covered = CollectCoveredTextureTargets(properties, bindings, hasMtoon, mtoon);
             var count = shader.GetPropertyCount();
             for (var i = 0; i < count; i++)
             {
@@ -687,51 +878,37 @@ namespace UniVRMXT.MaterialsOverride
                 }
 
                 var name = shader.GetPropertyName(i);
-                if (string.IsNullOrEmpty(name) ||
-                    !material.HasProperty(name) ||
-                    covered.Contains(name))
+                if (
+                    string.IsNullOrEmpty(name)
+                    || !material.HasProperty(name)
+                    || covered.Contains(name)
+                )
                 {
                     continue;
                 }
 
-                var previous = material.GetTexture(name);
                 material.SetTexture(name, null);
-                if (previous != null &&
-                    (string.Equals(name, "_MainTex", StringComparison.Ordinal) ||
-                     string.Equals(name, "_BaseMap", StringComparison.Ordinal) ||
-                     string.Equals(name, "_BaseColorMap", StringComparison.Ordinal)))
-                {
-                    clearedCritical.Add(name + " was '" + previous.name + "'");
-                }
-            }
-
-            if (clearedCritical.Count > 0)
-            {
-                Debug.LogWarning(
-                    "VRMXT_materials_override: cleared stock albedo on '" +
-                    material.name +
-                    "' after shader swap — override claims texture ownership but omits " +
-                    "main map. Cleared: " +
-                    string.Join(", ", clearedCritical) +
-                    ". Mesh may look invisible until _MainTex/_BaseMap is in properties " +
-                    "or bindings.");
             }
         }
 
         private static bool OverrideClaimsTextureOwnership(
             IReadOnlyList<VrmxtMaterialProperty> properties,
-            IReadOnlyList<VrmxtMaterialBinding> bindings)
+            IReadOnlyList<VrmxtMaterialBinding> bindings
+        )
         {
             if (properties != null)
             {
                 for (var i = 0; i < properties.Count; i++)
                 {
                     var property = properties[i];
-                    if (property != null &&
-                        string.Equals(
+                    if (
+                        property != null
+                        && string.Equals(
                             property.Type,
                             VrmxtMaterialsOverride.TargetTypeTexture,
-                            StringComparison.Ordinal))
+                            StringComparison.Ordinal
+                        )
+                    )
                     {
                         return true;
                     }
@@ -746,11 +923,14 @@ namespace UniVRMXT.MaterialsOverride
             for (var i = 0; i < bindings.Count; i++)
             {
                 var binding = bindings[i];
-                if (binding != null &&
-                    string.Equals(
+                if (
+                    binding != null
+                    && string.Equals(
                         binding.TargetType,
                         VrmxtMaterialsOverride.TargetTypeTexture,
-                        StringComparison.Ordinal))
+                        StringComparison.Ordinal
+                    )
+                )
                 {
                     return true;
                 }
@@ -768,7 +948,8 @@ namespace UniVRMXT.MaterialsOverride
             IReadOnlyList<VrmxtMaterialProperty> properties,
             IReadOnlyList<VrmxtMaterialBinding> bindings,
             bool hasMtoon,
-            JObject mtoon)
+            JObject mtoon
+        )
         {
             var covered = new HashSet<string>(StringComparer.Ordinal);
             if (properties != null)
@@ -776,12 +957,15 @@ namespace UniVRMXT.MaterialsOverride
                 for (var i = 0; i < properties.Count; i++)
                 {
                     var property = properties[i];
-                    if (property == null ||
-                        !string.Equals(
+                    if (
+                        property == null
+                        || !string.Equals(
                             property.Type,
                             VrmxtMaterialsOverride.TargetTypeTexture,
-                            StringComparison.Ordinal) ||
-                        string.IsNullOrEmpty(property.Name))
+                            StringComparison.Ordinal
+                        )
+                        || string.IsNullOrEmpty(property.Name)
+                    )
                     {
                         continue;
                     }
@@ -799,25 +983,31 @@ namespace UniVRMXT.MaterialsOverride
             for (var i = 0; i < bindings.Count; i++)
             {
                 var binding = bindings[i];
-                if (binding == null ||
-                    !string.Equals(
+                if (
+                    binding == null
+                    || !string.Equals(
                         binding.TargetType,
                         VrmxtMaterialsOverride.TargetTypeTexture,
-                        StringComparison.Ordinal) ||
-                    string.IsNullOrEmpty(binding.Target))
+                        StringComparison.Ordinal
+                    )
+                    || string.IsNullOrEmpty(binding.Target)
+                )
                 {
                     continue;
                 }
 
                 // Match ApplyBinding: unresolvable / non-texture MToon sources are ignored.
-                if (!TryResolveMtoonSource(
+                if (
+                    !TryResolveMtoonSource(
                         binding.Source,
                         mtoon,
                         out _,
                         out _,
                         out _,
-                        out var category) ||
-                    category != MtoonSourceCategory.Texture)
+                        out var category
+                    )
+                    || category != MtoonSourceCategory.Texture
+                )
                 {
                     continue;
                 }
@@ -899,7 +1089,8 @@ namespace UniVRMXT.MaterialsOverride
             out float? scalar,
             out float[] vector,
             out int? textureIndex,
-            out MtoonSourceCategory category)
+            out MtoonSourceCategory category
+        )
         {
             scalar = null;
             vector = null;
@@ -958,7 +1149,8 @@ namespace UniVRMXT.MaterialsOverride
         public static bool TryFindSiblingMtoonForPair(
             JObject gltfRoot,
             VrmxtMaterialsOverridePair pair,
-            out JObject mtoon)
+            out JObject mtoon
+        )
         {
             mtoon = null;
             if (pair == null)
@@ -966,16 +1158,25 @@ namespace UniVRMXT.MaterialsOverride
                 return false;
             }
 
-            if (gltfRoot == null ||
-                !gltfRoot.TryGetValue("materials", StringComparison.Ordinal, out var materialsToken) ||
-                materialsToken is not JArray materials)
+            if (
+                gltfRoot == null
+                || !gltfRoot.TryGetValue(
+                    "materials",
+                    StringComparison.Ordinal,
+                    out var materialsToken
+                )
+                || materialsToken is not JArray materials
+            )
             {
                 return false;
             }
 
             if (pair.GltfMaterialIndex >= 0 && pair.GltfMaterialIndex < materials.Count)
             {
-                return TryGetMtoonExtension(materials[pair.GltfMaterialIndex] as JObject, out mtoon);
+                return TryGetMtoonExtension(
+                    materials[pair.GltfMaterialIndex] as JObject,
+                    out mtoon
+                );
             }
 
             return TryFindSiblingMtoon(gltfRoot, pair.MaterialName, out mtoon);
@@ -987,18 +1188,22 @@ namespace UniVRMXT.MaterialsOverride
         public static bool TryGetMtoonBindingTextureIndex(
             string bindingSource,
             JObject mtoon,
-            out int textureIndex)
+            out int textureIndex
+        )
         {
             textureIndex = 0;
-            if (!TryResolveMtoonSource(
+            if (
+                !TryResolveMtoonSource(
                     bindingSource,
                     mtoon,
                     out _,
                     out _,
                     out var index,
-                    out var category) ||
-                category != MtoonSourceCategory.Texture ||
-                !index.HasValue)
+                    out var category
+                )
+                || category != MtoonSourceCategory.Texture
+                || !index.HasValue
+            )
             {
                 return false;
             }
@@ -1007,19 +1212,32 @@ namespace UniVRMXT.MaterialsOverride
             return true;
         }
 
-        private static bool TryFindSiblingMtoon(JObject gltfRoot, string materialName, out JObject mtoon)
+        private static bool TryFindSiblingMtoon(
+            JObject gltfRoot,
+            string materialName,
+            out JObject mtoon
+        )
         {
             mtoon = null;
-            if (gltfRoot == null ||
-                string.IsNullOrEmpty(materialName) ||
-                !gltfRoot.TryGetValue("materials", StringComparison.Ordinal, out var materialsToken) ||
-                materialsToken is not JArray materials)
+            if (
+                gltfRoot == null
+                || string.IsNullOrEmpty(materialName)
+                || !gltfRoot.TryGetValue(
+                    "materials",
+                    StringComparison.Ordinal,
+                    out var materialsToken
+                )
+                || materialsToken is not JArray materials
+            )
             {
                 return false;
             }
 
             var isDisambiguated = VrmxtMaterialsOverrideRuntime.TryGetDisambiguatedStoreKey(
-                materialName, out var baseName, out var occurrence);
+                materialName,
+                out var baseName,
+                out var occurrence
+            );
             if (!isDisambiguated)
             {
                 baseName = materialName;
@@ -1067,12 +1285,21 @@ namespace UniVRMXT.MaterialsOverride
 
         private static bool HasVrmxtMaterialsOverrideExtension(JObject materialObject)
         {
-            if (materialObject == null ||
-                !materialObject.TryGetValue("extensions", StringComparison.Ordinal, out var extensionsToken) ||
-                extensionsToken is not JObject extensions ||
-                !extensions.TryGetValue(
-                    "VRMXT_materials_override", StringComparison.Ordinal, out var overrideToken) ||
-                overrideToken is not JObject)
+            if (
+                materialObject == null
+                || !materialObject.TryGetValue(
+                    "extensions",
+                    StringComparison.Ordinal,
+                    out var extensionsToken
+                )
+                || extensionsToken is not JObject extensions
+                || !extensions.TryGetValue(
+                    "VRMXT_materials_override",
+                    StringComparison.Ordinal,
+                    out var overrideToken
+                )
+                || overrideToken is not JObject
+            )
             {
                 return false;
             }
@@ -1083,11 +1310,21 @@ namespace UniVRMXT.MaterialsOverride
         private static bool TryGetMtoonExtension(JObject materialObject, out JObject mtoon)
         {
             mtoon = null;
-            if (materialObject == null ||
-                !materialObject.TryGetValue("extensions", StringComparison.Ordinal, out var extensionsToken) ||
-                extensionsToken is not JObject extensions ||
-                !extensions.TryGetValue("VRMC_materials_mtoon", StringComparison.Ordinal, out var mtoonToken) ||
-                mtoonToken is not JObject mtoonObject)
+            if (
+                materialObject == null
+                || !materialObject.TryGetValue(
+                    "extensions",
+                    StringComparison.Ordinal,
+                    out var extensionsToken
+                )
+                || extensionsToken is not JObject extensions
+                || !extensions.TryGetValue(
+                    "VRMC_materials_mtoon",
+                    StringComparison.Ordinal,
+                    out var mtoonToken
+                )
+                || mtoonToken is not JObject mtoonObject
+            )
             {
                 return false;
             }
@@ -1119,9 +1356,11 @@ namespace UniVRMXT.MaterialsOverride
 
         private static float ReadFloat(JObject parent, string propertyName, float defaultValue)
         {
-            if (parent == null ||
-                !parent.TryGetValue(propertyName, StringComparison.Ordinal, out var token) ||
-                (token.Type != JTokenType.Float && token.Type != JTokenType.Integer))
+            if (
+                parent == null
+                || !parent.TryGetValue(propertyName, StringComparison.Ordinal, out var token)
+                || (token.Type != JTokenType.Float && token.Type != JTokenType.Integer)
+            )
             {
                 return defaultValue;
             }
@@ -1133,11 +1372,18 @@ namespace UniVRMXT.MaterialsOverride
             JObject parent,
             string objectPropertyName,
             string nestedPropertyName,
-            float defaultValue)
+            float defaultValue
+        )
         {
-            if (parent == null ||
-                !parent.TryGetValue(objectPropertyName, StringComparison.Ordinal, out var objectToken) ||
-                objectToken is not JObject nested)
+            if (
+                parent == null
+                || !parent.TryGetValue(
+                    objectPropertyName,
+                    StringComparison.Ordinal,
+                    out var objectToken
+                )
+                || objectToken is not JObject nested
+            )
             {
                 return defaultValue;
             }
@@ -1147,10 +1393,12 @@ namespace UniVRMXT.MaterialsOverride
 
         private static float[] ReadFloatArray(JObject parent, string propertyName, float[] defaults)
         {
-            if (parent == null ||
-                !parent.TryGetValue(propertyName, StringComparison.Ordinal, out var token) ||
-                token is not JArray array ||
-                array.Count != defaults.Length)
+            if (
+                parent == null
+                || !parent.TryGetValue(propertyName, StringComparison.Ordinal, out var token)
+                || token is not JArray array
+                || array.Count != defaults.Length
+            )
             {
                 return defaults;
             }
@@ -1171,11 +1419,17 @@ namespace UniVRMXT.MaterialsOverride
 
         private static int? ReadTextureIndex(JObject parent, string textureInfoPropertyName)
         {
-            if (parent == null ||
-                !parent.TryGetValue(textureInfoPropertyName, StringComparison.Ordinal, out var token) ||
-                token is not JObject textureInfo ||
-                !textureInfo.TryGetValue("index", StringComparison.Ordinal, out var indexToken) ||
-                (indexToken.Type != JTokenType.Integer && indexToken.Type != JTokenType.Float))
+            if (
+                parent == null
+                || !parent.TryGetValue(
+                    textureInfoPropertyName,
+                    StringComparison.Ordinal,
+                    out var token
+                )
+                || token is not JObject textureInfo
+                || !textureInfo.TryGetValue("index", StringComparison.Ordinal, out var indexToken)
+                || (indexToken.Type != JTokenType.Integer && indexToken.Type != JTokenType.Float)
+            )
             {
                 return null;
             }
