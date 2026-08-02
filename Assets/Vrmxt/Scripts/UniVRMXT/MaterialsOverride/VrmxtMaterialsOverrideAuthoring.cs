@@ -63,8 +63,17 @@ namespace UniVRMXT.MaterialsOverride
         /// <see cref="VrmxtMaterialsOverridePair.OverrideMaterial"/>. Sibling unity variants
         /// and other engines stay intact. Fills <c>variant</c> from the active RP when creating
         /// a new slot (see <see cref="VrmxtMaterialsOverrideExporter.ResolveUnityVariant"/>).
+        /// <para>
+        /// When <paramref name="includeTextureProperties"/> is true (Editor Transfer), texture
+        /// rows use placeholder indices for later <c>PrepareTextures</c> remapping. Pass false
+        /// for patch hosts that cannot add GLB images (same as
+        /// <see cref="SyncPropertiesFromLiveMaterials"/> with <c>includePackedTextures: false</c>).
+        /// </para>
         /// </summary>
-        public static void SyncUnityOverrideFromMaterial(VrmxtMaterialsOverridePair pair)
+        public static void SyncUnityOverrideFromMaterial(
+            VrmxtMaterialsOverridePair pair,
+            bool includeTextureProperties = true
+        )
         {
             if (pair?.OverrideMaterial == null || pair.OverrideMaterial.shader == null)
             {
@@ -195,7 +204,10 @@ namespace UniVRMXT.MaterialsOverride
                 existingProvider
                 ?? new MaterialProvider(DefaultProviderId, ResolvePackageVersion());
 
-            var properties = CaptureProperties(material, pair.SourceMaterial);
+            var captured = CaptureProperties(material, pair.SourceMaterial);
+            var properties = includeTextureProperties
+                ? captured
+                : WithoutTextureProperties(captured);
 
             var unityMaterial = new UnityMaterialOverride(
                 VrmxtMaterialsOverride.UnityMaterialIdTypeShaderName,
@@ -387,6 +399,8 @@ namespace UniVRMXT.MaterialsOverride
                 return;
             }
 
+            instance.ApplyOverridesToRenderers = true;
+
             foreach (var pair in instance.Pairs)
             {
                 if (pair?.OverrideMaterial == null || string.IsNullOrEmpty(pair.MaterialName))
@@ -394,13 +408,20 @@ namespace UniVRMXT.MaterialsOverride
                     continue;
                 }
 
-                var source = pair.OverrideMaterial;
-                if (source.shader == null)
+                var overrideMaterial = pair.OverrideMaterial;
+                if (overrideMaterial.shader == null)
                 {
                     continue;
                 }
 
-                ApplyOverrideToNamedSlots(root, pair.MaterialName, source);
+                ApplyOverrideToNamedSlots(
+                    root,
+                    pair.MaterialName,
+                    overrideMaterial,
+                    pair.SourceMaterial,
+                    pair.LiveAppliedOverride
+                );
+                pair.LiveAppliedOverride = overrideMaterial;
             }
         }
 
@@ -424,6 +445,8 @@ namespace UniVRMXT.MaterialsOverride
                 return;
             }
 
+            instance.ApplyOverridesToRenderers = false;
+
             foreach (var pair in instance.Pairs)
             {
                 if (pair == null || string.IsNullOrEmpty(pair.MaterialName))
@@ -435,19 +458,32 @@ namespace UniVRMXT.MaterialsOverride
                     root,
                     pair.MaterialName,
                     pair.SourceMaterial,
-                    destroyPreviewMaterials
+                    destroyPreviewMaterials,
+                    pair.OverrideMaterial,
+                    pair.LiveAppliedOverride
                 );
+                pair.LiveAppliedOverride = null;
             }
         }
 
         /// <summary>
         /// Restore one material name's renderer slots to <paramref name="sourceMaterial"/>.
         /// </summary>
+        /// <param name="overrideMaterial">
+        /// When set, slots holding this asset are restored even if the override name differs
+        /// from the glTF / store key name.
+        /// </param>
+        /// <param name="liveAppliedOverride">
+        /// Prior live slot material (may differ from <paramref name="overrideMaterial"/> after
+        /// a re-assign); also matched for restore.
+        /// </param>
         public static void RestoreSourceMaterial(
             GameObject root,
             string materialName,
             Material sourceMaterial,
-            bool destroyPreviewMaterials = true
+            bool destroyPreviewMaterials = true,
+            Material overrideMaterial = null,
+            Material liveAppliedOverride = null
         )
         {
             if (root == null || string.IsNullOrEmpty(materialName) || sourceMaterial == null)
@@ -455,18 +491,28 @@ namespace UniVRMXT.MaterialsOverride
                 return;
             }
 
-            RestoreSourceToNamedSlots(root, materialName, sourceMaterial, destroyPreviewMaterials);
+            RestoreSourceToNamedSlots(
+                root,
+                materialName,
+                sourceMaterial,
+                destroyPreviewMaterials,
+                overrideMaterial,
+                liveAppliedOverride
+            );
         }
 
         /// <summary>
-        /// Swap matching renderer slots to a scene-owned clone of
-        /// <paramref name="overrideMaterial"/> (never mutate imported asset materials).
-        /// Clone keeps <paramref name="materialName"/> so export/applier name lookup still works.
+        /// Put <paramref name="overrideMaterial"/> into matching renderer slots. Never mutates
+        /// stock MToon / <paramref name="sourceMaterial"/> — slot reference swap only.
+        /// Matches SourceMaterial, store-key name, or <paramref name="liveAppliedOverride"/>
+        /// (prior Override Material still on the mesh after a re-assign).
         /// </summary>
         private static void ApplyOverrideToNamedSlots(
             GameObject root,
             string materialName,
-            Material overrideMaterial
+            Material overrideMaterial,
+            Material sourceMaterial,
+            Material liveAppliedOverride
         )
         {
             var renderers = root.GetComponentsInChildren<Renderer>(true);
@@ -483,29 +529,31 @@ namespace UniVRMXT.MaterialsOverride
                 for (var j = 0; j < shared.Length; j++)
                 {
                     var current = shared[j];
-                    if (current == null || !MaterialNameMatches(current.name, materialName))
+                    if (current == null || ReferenceEquals(current, overrideMaterial))
                     {
                         continue;
                     }
 
+                    var isSource =
+                        sourceMaterial != null && ReferenceEquals(current, sourceMaterial);
+                    var isLiveApplied =
+                        liveAppliedOverride != null
+                        && ReferenceEquals(current, liveAppliedOverride);
+                    var nameMatches = MaterialNameMatches(current.name, materialName);
                     var previousIsPreview = (current.hideFlags & HideFlags.DontSave) != 0;
+                    if (!isSource && !isLiveApplied && !nameMatches)
+                    {
+                        continue;
+                    }
 
+                    shared[j] = overrideMaterial;
+                    changed = true;
+
+                    // Drop leftover DontSave previews from the old clone-based path.
                     if (previousIsPreview)
                     {
-                        // Prior scene preview instance — update in place.
-                        CopyMaterialState(overrideMaterial, current);
-                        current.name = materialName;
-                        continue;
+                        DestroyOwnedMaterial(current);
                     }
-
-                    // Stock / override assets: never mutate — swap slot to a DontSave clone.
-                    var preview = new Material(overrideMaterial)
-                    {
-                        name = materialName,
-                        hideFlags = HideFlags.DontSave,
-                    };
-                    shared[j] = preview;
-                    changed = true;
                 }
 
                 if (changed)
@@ -519,7 +567,9 @@ namespace UniVRMXT.MaterialsOverride
             GameObject root,
             string materialName,
             Material sourceMaterial,
-            bool destroyPreviewMaterials
+            bool destroyPreviewMaterials,
+            Material overrideMaterial,
+            Material liveAppliedOverride
         )
         {
             if (sourceMaterial == null)
@@ -527,8 +577,7 @@ namespace UniVRMXT.MaterialsOverride
                 return;
             }
 
-            // Resolve live mats for this store key (honors Name#N). Those are the slots
-            // currently showing stock or a DontSave preview that we need to replace.
+            // Name-matched live mats (stock or old DontSave previews named like the store key).
             var liveTargets = new HashSet<Material>();
             foreach (
                 var live in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
@@ -543,11 +592,6 @@ namespace UniVRMXT.MaterialsOverride
                 }
             }
 
-            if (liveTargets.Count == 0)
-            {
-                return;
-            }
-
             var renderers = root.GetComponentsInChildren<Renderer>(true);
             for (var i = 0; i < renderers.Length; i++)
             {
@@ -562,12 +606,21 @@ namespace UniVRMXT.MaterialsOverride
                 for (var j = 0; j < shared.Length; j++)
                 {
                     var current = shared[j];
-                    if (current == null || !liveTargets.Contains(current))
+                    if (current == null || ReferenceEquals(current, sourceMaterial))
                     {
                         continue;
                     }
 
-                    if (ReferenceEquals(current, sourceMaterial))
+                    var isAssignedOverride =
+                        overrideMaterial != null && ReferenceEquals(current, overrideMaterial);
+                    var isLiveApplied =
+                        liveAppliedOverride != null
+                        && ReferenceEquals(current, liveAppliedOverride);
+                    var isNameMatched = liveTargets.Contains(current);
+                    var isLegacyPreview =
+                        (current.hideFlags & HideFlags.DontSave) != 0
+                        && MaterialNameMatches(current.name, materialName);
+                    if (!isAssignedOverride && !isLiveApplied && !isNameMatched && !isLegacyPreview)
                     {
                         continue;
                     }
@@ -708,10 +761,12 @@ namespace UniVRMXT.MaterialsOverride
                         var scale = material.GetTextureScale(name);
                         var offset = material.GetTextureOffset(name);
                         float[] transform = null;
-                        if (Math.Abs(scale.x - 1f) > 1e-5f ||
-                            Math.Abs(scale.y - 1f) > 1e-5f ||
-                            Math.Abs(offset.x) > 1e-5f ||
-                            Math.Abs(offset.y) > 1e-5f)
+                        if (
+                            Math.Abs(scale.x - 1f) > 1e-5f
+                            || Math.Abs(scale.y - 1f) > 1e-5f
+                            || Math.Abs(offset.x) > 1e-5f
+                            || Math.Abs(offset.y) > 1e-5f
+                        )
                         {
                             transform = new[] { scale.x, scale.y, offset.x, offset.y };
                         }
@@ -757,19 +812,19 @@ namespace UniVRMXT.MaterialsOverride
             }
 
             // Override albedo unset — prefer stock / SourceMaterial map.
-            if (
-                TryGetFallbackAlbedo(material, textureFallback, out var fallbackSlot, out _)
-            )
+            if (TryGetFallbackAlbedo(material, textureFallback, out var fallbackSlot, out _))
             {
                 float[] transform = null;
                 if (textureFallback != null && textureFallback.HasProperty(fallbackSlot))
                 {
                     var scale = textureFallback.GetTextureScale(fallbackSlot);
                     var offset = textureFallback.GetTextureOffset(fallbackSlot);
-                    if (Math.Abs(scale.x - 1f) > 1e-5f ||
-                        Math.Abs(scale.y - 1f) > 1e-5f ||
-                        Math.Abs(offset.x) > 1e-5f ||
-                        Math.Abs(offset.y) > 1e-5f)
+                    if (
+                        Math.Abs(scale.x - 1f) > 1e-5f
+                        || Math.Abs(scale.y - 1f) > 1e-5f
+                        || Math.Abs(offset.x) > 1e-5f
+                        || Math.Abs(offset.y) > 1e-5f
+                    )
                     {
                         transform = new[] { scale.x, scale.y, offset.x, offset.y };
                     }
@@ -1004,15 +1059,18 @@ namespace UniVRMXT.MaterialsOverride
         /// Replace active-unity <c>properties</c> on each store pair from the live Character
         /// renderer material. Keeps shader, bindings, and sibling overrides.
         /// <para>
-        /// Texture policy (Warudo patch): keep a texture row only when the live slot map is
-        /// already packed in the GLB (matches <see cref="VrmxtMaterialsOverrideInstance.ImportedTextures"/>
-        /// or an existing override texture index). New Warudo Images / editor maps that are
-        /// not in the file are omitted — patch export cannot add GLB images.
+        /// Texture policy (Warudo patch): when <paramref name="includePackedTextures"/> is true,
+        /// keep a texture row only when the live slot map is already packed in the GLB
+        /// (matches <see cref="VrmxtMaterialsOverrideInstance.ImportedTextures"/> or an
+        /// existing override texture index). New Warudo Images / editor maps that are not in
+        /// the file are omitted — patch export cannot add GLB images. When false (Material
+        /// Transfer), all <c>type: texture</c> rows are omitted.
         /// </para>
         /// </summary>
         public static int SyncPropertiesFromLiveMaterials(
             VrmxtMaterialsOverrideInstance store,
-            GameObject root
+            GameObject root,
+            bool includePackedTextures = true
         )
         {
             if (store?.Pairs == null || root == null)
@@ -1061,12 +1119,10 @@ namespace UniVRMXT.MaterialsOverride
                     continue;
                 }
 
-                var properties = FilterTexturesToPackedOnly(
-                    CaptureProperties(live, pair.SourceMaterial),
-                    live,
-                    pair,
-                    store
-                );
+                var captured = CaptureProperties(live, pair.SourceMaterial);
+                var properties = includePackedTextures
+                    ? FilterTexturesToPackedOnly(captured, live, pair, store)
+                    : WithoutTextureProperties(captured);
 
                 if (!TryReplaceActiveUnityProperties(pair, properties))
                 {
@@ -1227,8 +1283,8 @@ namespace UniVRMXT.MaterialsOverride
         }
 
         /// <summary>
-        /// Drop <c>texture</c>-typed entries from a properties list (kept for shader-only
-        /// upserts that would otherwise preserve stale texture indices).
+        /// Drop <c>texture</c>-typed entries from a properties list (Material Transfer and
+        /// Sync with <c>includePackedTextures: false</c>).
         /// </summary>
         public static List<VrmxtMaterialProperty> WithoutTextureProperties(
             IReadOnlyList<VrmxtMaterialProperty> properties
@@ -1424,17 +1480,6 @@ namespace UniVRMXT.MaterialsOverride
             {
                 // LocalKeyword API may be unavailable on older pipelines; skip features.
             }
-        }
-
-        private static void CopyMaterialState(Material source, Material target)
-        {
-            if (source == null || target == null || source.shader == null)
-            {
-                return;
-            }
-
-            target.shader = source.shader;
-            target.CopyPropertiesFromMaterial(source);
         }
 
         private static string ResolvePackageVersion()

@@ -39,7 +39,7 @@ public sealed class VrmxtManagerAsset : Asset
     [Label("Enable materials override")]
     [Description(
         "Apply VRMXT_materials_override on this Character. Off restores stock shaders. "
-            + "Required for Apply / Clear / Export below."
+            + "Required for Apply / Transfer / Clear / Export below."
     )]
     [HiddenIf(nameof(HideVrmxtControls))]
     public bool EnableMaterialsOverride = true;
@@ -49,14 +49,18 @@ public sealed class VrmxtManagerAsset : Asset
     public string Hint =
         "Add one VRMXT Manager per Character. Feature toggles default on. "
         + "Without a Manager, the plugin still applies both features. "
+        + "Material templates: copy Unity `.mat` YAML into StreamingAssets/"
+        + "VRMXT/MaterialTemplates/, set Shader + Apply shader overrides, set Material "
+        + "template, then Transfer (floats/colors/keywords only — not shader or textures). "
         + "Export patches `VRMXT_materials_override` into a copy of the original local VRM "
         + "(geometry/BIN unchanged). Does not capture live mesh or VFX edits.";
 
     [DataInput]
     [Label("Materials")]
     [Description(
-        "Filled from the Character. Use Refresh after load. Pick shaders then Apply. "
-            + "Add/remove rows are ignored on Apply/Export — Refresh rebuilds the list."
+        "Filled from the Character. Use Refresh after load. Pick shaders or Transfer from "
+            + "templates, then Apply. Add/remove rows are ignored on Apply/Export — Refresh "
+            + "rebuilds the list (template paths are preserved by material name)."
     )]
     [HiddenIf(nameof(HideVrmxtControls))]
     public VrmxtMaterialShaderRow[] Materials = Array.Empty<VrmxtMaterialShaderRow>();
@@ -73,6 +77,7 @@ public sealed class VrmxtManagerAsset : Asset
 
     private bool _exportInProgress;
     private bool _applyInProgress;
+    private bool _transferInProgress;
     private bool _clearInProgress;
     private bool _suppressCharacterWatch;
     private Guid _characterSourceWatch;
@@ -442,20 +447,80 @@ public sealed class VrmxtManagerAsset : Asset
 
     private void FillMaterialsFromStore(GameObject root, VrmxtMaterialsOverrideInstance store)
     {
+        var priorUi = CollectRowUiByMaterialName();
         var rows = VrmxtMaterialsShaderAuthoring.CollectMaterialRows(root, store);
         var structured = new VrmxtMaterialShaderRow[rows.Count];
         for (var i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
+            var templatePath = string.Empty;
+            var textureHandling = VrmxtMaterialsTemplateTransfer.TextureHandlingKeepPacked;
+            if (!string.IsNullOrEmpty(row.MaterialName))
+            {
+                var key = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(row.MaterialName);
+                if (priorUi.TryGetValue(key, out var prior))
+                {
+                    templatePath = prior.TemplateAssetPath;
+                    textureHandling = prior.TextureHandling;
+                }
+            }
+
             structured[i] = StructuredData.Create<VrmxtMaterialShaderRow>(sd =>
             {
                 sd.MaterialName = row.MaterialName;
                 sd.ShaderName = row.ShaderName ?? string.Empty;
+                sd.TemplateAssetPath = templatePath;
+                sd.TextureHandling = textureHandling;
                 sd.GltfMaterialIndex = row.GltfMaterialIndex;
             });
+            // UMod often leaves StructuredData<T>.Parent null for top-level row types.
+            structured[i].BindManager(this);
+            // OnCreate/OnAssignedParent refresh TemplateTextureSlots; nudge if path set.
+            if (!string.IsNullOrEmpty(templatePath))
+            {
+                structured[i].RefreshTemplateTextureSlots();
+            }
         }
 
         SetDataInput(nameof(Materials), structured, broadcast: true);
+    }
+
+    private struct RowUiState
+    {
+        public string TemplateAssetPath;
+        public string TextureHandling;
+    }
+
+    private Dictionary<string, RowUiState> CollectRowUiByMaterialName()
+    {
+        var map = new Dictionary<string, RowUiState>(StringComparer.Ordinal);
+        var materials = Materials ?? Array.Empty<VrmxtMaterialShaderRow>();
+        for (var i = 0; i < materials.Length; i++)
+        {
+            var row = materials[i];
+            if (row == null || string.IsNullOrWhiteSpace(row.MaterialName))
+            {
+                continue;
+            }
+
+            var key = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(row.MaterialName);
+            if (map.ContainsKey(key))
+            {
+                continue;
+            }
+
+            map[key] = new RowUiState
+            {
+                TemplateAssetPath = string.IsNullOrWhiteSpace(row.TemplateAssetPath)
+                    ? string.Empty
+                    : row.TemplateAssetPath.Trim(),
+                TextureHandling = VrmxtMaterialsTemplateTransfer.NormalizeTextureHandling(
+                    row.TextureHandling
+                ),
+            };
+        }
+
+        return map;
     }
 
     private static int CountOverrideJson(VrmxtMaterialsOverrideInstance store)
@@ -529,26 +594,28 @@ public sealed class VrmxtManagerAsset : Asset
         for (var i = 0; i < materials.Length; i++)
         {
             var row = materials[i];
-            if (
-                row == null
-                || string.IsNullOrWhiteSpace(row.MaterialName)
-                || string.IsNullOrWhiteSpace(row.ShaderName)
-            )
+            if (row == null || string.IsNullOrWhiteSpace(row.MaterialName))
             {
                 continue;
             }
 
-            if (
-                !VrmxtMaterialsShaderAuthoring.TrySetShaderName(
-                    store,
-                    row.MaterialName,
-                    row.ShaderName,
-                    out var setError
-                )
-            )
+            if (!string.IsNullOrWhiteSpace(row.ShaderName))
             {
-                Debug.LogWarning("VRMXT: export shader upsert skipped: " + setError);
-                continue;
+                if (
+                    !VrmxtMaterialsShaderAuthoring.TrySetShaderName(
+                        store,
+                        row.MaterialName,
+                        row.ShaderName,
+                        out var setError
+                    )
+                )
+                {
+                    Debug.LogWarning("VRMXT: export shader upsert skipped: " + setError);
+                }
+                else
+                {
+                    shaderRows++;
+                }
             }
 
             if (row.GltfMaterialIndex >= 0)
@@ -559,21 +626,51 @@ public sealed class VrmxtManagerAsset : Asset
                     pair.GltfMaterialIndex = row.GltfMaterialIndex;
                 }
             }
+        }
 
-            shaderRows++;
+        // Packed GLB textures from live, then YAML template values (keeps those textures).
+        VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(store, root);
+
+        for (var i = 0; i < materials.Length; i++)
+        {
+            var row = materials[i];
+            if (
+                row == null
+                || string.IsNullOrWhiteSpace(row.MaterialName)
+                || string.IsNullOrWhiteSpace(row.TemplateAssetPath)
+            )
+            {
+                continue;
+            }
+
+            if (
+                VrmxtMaterialsTemplateTransfer.TryTransferValuesFromTemplatePath(
+                    store,
+                    row.MaterialName,
+                    row.TemplateAssetPath,
+                    row.TextureHandling,
+                    root,
+                    out var transferError
+                )
+            )
+            {
+                shaderRows++;
+            }
+            else
+            {
+                Debug.LogWarning("VRMXT: export template Transfer skipped: " + transferError);
+            }
         }
 
         if (!StoreHasOverrideJson(store))
         {
             error =
                 shaderRows == 0
-                    ? "No materials override entries to export. Set shaders and Apply first."
+                    ? "No materials override entries to export. Set shaders or Transfer templates first."
                     : "Failed to write shader overrides into the store for export.";
             return false;
         }
 
-        // Live props; packed GLB textures kept, new unpackaged Images maps omitted.
-        VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(store, root);
         return true;
     }
 
@@ -610,11 +707,79 @@ public sealed class VrmxtManagerAsset : Asset
 
     [Trigger]
     [Label("Apply shader overrides")]
-    [Description("Write shader selections into the VRMXT store and re-apply on the Character.")]
+    [Description(
+        "Write shader selections into the VRMXT store (keeps packed texture properties) "
+            + "and re-apply on the Character."
+    )]
     [HiddenIf(nameof(HideVrmxtControls))]
     public void ApplyShaderOverrides()
     {
         ApplyShaderOverridesAsync().Forget();
+    }
+
+    [Trigger]
+    [Label("Transfer from templates")]
+    [Description(
+        "Parse StreamingAssets .mat YAML templates (floats, colors, keywords), merge into "
+            + "VRMXT_materials_override, then Apply. Does not change Shader. Per-row Texture "
+            + "handling can keep packed maps, clear slots that are set, or clear all. "
+            + "Set Shader and Apply shader overrides first."
+    )]
+    [HiddenIf(nameof(HideVrmxtControls))]
+    public void TransferFromTemplates()
+    {
+        TransferFromTemplatesAsync(singleRow: null).Forget();
+    }
+
+    [Trigger]
+    [Label("Open material templates folder")]
+    [Description(
+        "Open StreamingAssets/VRMXT/MaterialTemplates in the OS file browser "
+            + "(drop Unity .mat YAML files here)."
+    )]
+    [HiddenIf(nameof(HideVrmxtControls))]
+    public void OpenMaterialTemplatesFolder()
+    {
+        OpenWarudoMaterialTemplatesFolderAsync().Forget();
+    }
+
+    private async UniTaskVoid OpenWarudoMaterialTemplatesFolderAsync()
+    {
+        await UniTask.Yield();
+        try
+        {
+            VrmxtMaterialsTemplateTransfer.EnsureTemplatesFolder();
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning(
+                "VRMXT: could not ensure StreamingAssets/"
+                    + VrmxtMaterialsTemplateTransfer.WarudoDataMaterialTemplatesRelative
+                    + ": "
+                    + e.Message
+            );
+        }
+
+        var abs = VrmxtMaterialsTemplateTransfer.TryGetWarudoDataMaterialTemplatesAbsolutePath();
+        if (string.IsNullOrEmpty(abs))
+        {
+            SetStatus("StreamingAssets path unavailable.");
+            return;
+        }
+
+        VrmxtMaterialsTemplateTransfer.OpenAbsolutePathInOs(abs);
+        SetStatus("Opened " + abs);
+    }
+
+    /// <summary>Per-row Transfer trigger from <see cref="VrmxtMaterialShaderRow"/>.</summary>
+    public void TransferSingleTemplate(VrmxtMaterialShaderRow row)
+    {
+        if (row == null)
+        {
+            return;
+        }
+
+        TransferFromTemplatesAsync(row).Forget();
     }
 
     [Trigger]
@@ -796,9 +961,9 @@ public sealed class VrmxtManagerAsset : Asset
 
     private async UniTaskVoid ApplyShaderOverridesAsync()
     {
-        if (_applyInProgress)
+        if (_applyInProgress || _transferInProgress || _clearInProgress || _exportInProgress)
         {
-            SetStatus("Apply already in progress.");
+            SetStatus("Busy — wait for Apply/Transfer/Clear/Export to finish.");
             return;
         }
 
@@ -969,11 +1134,296 @@ public sealed class VrmxtManagerAsset : Asset
         }
     }
 
+    private async UniTaskVoid TransferFromTemplatesAsync(VrmxtMaterialShaderRow singleRow)
+    {
+        if (_transferInProgress || _applyInProgress || _clearInProgress || _exportInProgress)
+        {
+            SetStatus("Busy — wait for Apply/Transfer/Clear/Export to finish.");
+            return;
+        }
+
+        _transferInProgress = true;
+        try
+        {
+            if (!IsAssignedVrm1Character())
+            {
+                SetStatus(
+                    Character != null
+                        ? "'" + Character.Name + "' is not VRM 1.0."
+                        : "Select a VRM 1.0 Character."
+                );
+                Broadcast();
+                return;
+            }
+
+            if (!EnableMaterialsOverride)
+            {
+                SetStatus("Enable Materials Override first.");
+                return;
+            }
+
+            if (Character == null || !Character.IsNonNullAndActive())
+            {
+                SetStatus("Select an active local Character.");
+                return;
+            }
+
+            var plugin = VrmxtPlugin.ActiveInstance;
+            if (plugin == null)
+            {
+                SetStatus("VRMXT plugin is not active.");
+                return;
+            }
+
+            if (
+                !VrmxtCharacterSource.TryGetPersistentRelativePath(
+                    Character.Source,
+                    out var relativePath
+                )
+            )
+            {
+                SetStatus("Character Source is not a local character:// .vrm.");
+                return;
+            }
+
+            if (!Context.PersistentDataManager.HasFile(relativePath))
+            {
+                SetStatus("Character file not found at '" + relativePath + "'.");
+                return;
+            }
+
+            var root = VrmxtCharacterApply.TryFindCharacterRoot(Character);
+            if (root == null)
+            {
+                SetStatus("Character root not found.");
+                return;
+            }
+
+            var bytes = await Context.PersistentDataManager.ReadFileBytesAsync(relativePath);
+            if (
+                !GlbChunks.TryExtractJson(bytes, out var gltfJson) || string.IsNullOrEmpty(gltfJson)
+            )
+            {
+                SetStatus("Failed to extract glTF JSON for Transfer.");
+                return;
+            }
+
+            if (
+                !VrmxtMaterialsOverrideRuntime.TryAttachFromGltfJson(root, gltfJson, out var store)
+                || store == null
+            )
+            {
+                SetStatus("Failed to create VRMXT materials store on Character root.");
+                return;
+            }
+
+            // File attach may omit SourceMaterial; Apply needs it for restore + name match.
+            store.RefreshSourceMaterials();
+
+            var materials =
+                singleRow != null
+                    ? new[] { singleRow }
+                    : Materials ?? Array.Empty<VrmxtMaterialShaderRow>();
+            var transferred = 0;
+            var skipped = 0;
+            var errors = 0;
+            for (var i = 0; i < materials.Length; i++)
+            {
+                var row = materials[i];
+                if (row == null || string.IsNullOrWhiteSpace(row.MaterialName))
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(row.TemplateAssetPath))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                // Values-only Transfer needs an active non-MToon unity slot.
+                if (!string.IsNullOrWhiteSpace(row.ShaderName))
+                {
+                    if (
+                        !VrmxtMaterialsShaderAuthoring.TrySetShaderName(
+                            store,
+                            row.MaterialName,
+                            row.ShaderName,
+                            out var setError
+                        )
+                    )
+                    {
+                        errors++;
+                        Debug.LogWarning("VRMXT: template Transfer shader upsert: " + setError);
+                        continue;
+                    }
+                }
+
+                if (
+                    !VrmxtMaterialsTemplateTransfer.TryTransferValuesFromTemplatePath(
+                        store,
+                        row.MaterialName,
+                        row.TemplateAssetPath,
+                        row.TextureHandling,
+                        root,
+                        out var transferError
+                    )
+                )
+                {
+                    errors++;
+                    Debug.LogWarning("VRMXT: template Transfer skipped: " + transferError);
+                    continue;
+                }
+
+                transferred++;
+            }
+
+            if (transferred == 0)
+            {
+                SetStatus(
+                    singleRow != null
+                        ? "Transfer skipped. Set Material template on this row first. errors="
+                            + errors
+                            + "."
+                        : "No templates transferred. Set Material template paths first. skipped="
+                            + skipped
+                            + " errors="
+                            + errors
+                            + "."
+                );
+                return;
+            }
+
+            VrmxtMaterialsStockShaders.CaptureIfAbsent(root);
+
+            Func<int, Texture> resolveTexture = index =>
+                store.TryGetImportedTexture(index, out var texture) ? texture : null;
+            var pipeline = VrmxtCharacterApply.DetectActivePipelineForWarudo();
+            var resolveShader = VrmxtMaterialsOverrideApplier.ShaderResolveProvider;
+            if (resolveShader == null)
+            {
+                Debug.LogWarning(
+                    "VRMXT: Transfer Apply — ShaderResolveProvider is null; "
+                        + "mod shaders may not resolve (Shader.Find is null under UMod)."
+                );
+            }
+
+            var applied = VrmxtMaterialsOverrideApplier.Apply(
+                root,
+                store,
+                gltfJson,
+                pipeline,
+                resolveTexture,
+                null,
+                resolveShader
+            );
+
+            // Clear all: null every texture slot after Apply (no texture ownership in JSON).
+            // Clear if set: already cleared assigned slots before Apply; do not wipe packed
+            // maps Apply just restored onto previously empty slots.
+            for (var i = 0; i < materials.Length; i++)
+            {
+                var row = materials[i];
+                if (
+                    row == null
+                    || string.IsNullOrWhiteSpace(row.MaterialName)
+                    || string.IsNullOrWhiteSpace(row.TemplateAssetPath)
+                )
+                {
+                    continue;
+                }
+
+                var mode = VrmxtMaterialsTemplateTransfer.NormalizeTextureHandling(
+                    row.TextureHandling
+                );
+                if (
+                    !string.Equals(
+                        mode,
+                        VrmxtMaterialsTemplateTransfer.TextureHandlingClearAll,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    continue;
+                }
+
+                foreach (
+                    var live in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                        root,
+                        row.MaterialName
+                    )
+                )
+                {
+                    VrmxtMaterialsTemplateTransfer.ClearLiveTextures(live, mode);
+                }
+            }
+
+            // Snap live→JSON. Packed maps survive for Keep packed; cleared slots stay empty.
+            var snapped = 0;
+            if (applied > 0)
+            {
+                snapped = VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(
+                    store,
+                    root,
+                    includePackedTextures: true
+                );
+            }
+
+            var catalog = VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(
+                Character,
+                root,
+                store
+            );
+
+            FillMaterialsFromStore(root, store);
+
+            var scope =
+                singleRow != null
+                    ? "row '" + singleRow.MaterialName + "'"
+                    : "all rows";
+            SetStatus(
+                "Transferred templates ("
+                    + scope
+                    + "): ok="
+                    + transferred
+                    + " live="
+                    + applied
+                    + " snapped="
+                    + snapped
+                    + " catalog="
+                    + catalog
+                    + " skipped="
+                    + skipped
+                    + " errors="
+                    + errors
+                    + " (YAML values; texture handling per row) ["
+                    + Character.Name
+                    + "]"
+            );
+            if (applied == 0)
+            {
+                Debug.LogWarning(
+                    "VRMXT: Transfer wrote override JSON but Apply updated 0 materials. "
+                        + "Check Status live=0 — shader unresolved or material name mismatch."
+                );
+            }
+        }
+        catch (Exception e)
+        {
+            SetStatus("Transfer failed: " + e.Message);
+            Debug.LogException(e);
+        }
+        finally
+        {
+            _transferInProgress = false;
+        }
+    }
+
     private async UniTaskVoid ClearAllMaterialOverridesAsync()
     {
-        if (_clearInProgress || _applyInProgress)
+        if (_clearInProgress || _applyInProgress || _transferInProgress || _exportInProgress)
         {
-            SetStatus("Busy — wait for Apply/Clear to finish.");
+            SetStatus("Busy — wait for Apply/Transfer/Clear/Export to finish.");
             return;
         }
 
@@ -1088,9 +1538,9 @@ public sealed class VrmxtManagerAsset : Asset
 
     private async UniTaskVoid ExportAsync()
     {
-        if (_exportInProgress)
+        if (_exportInProgress || _applyInProgress || _transferInProgress || _clearInProgress)
         {
-            SetStatus("Export already in progress.");
+            SetStatus("Busy — wait for Apply/Transfer/Clear/Export to finish.");
             return;
         }
 

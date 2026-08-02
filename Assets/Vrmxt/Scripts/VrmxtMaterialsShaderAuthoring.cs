@@ -124,7 +124,8 @@ public static class VrmxtMaterialsShaderAuthoring
 
     /// <summary>
     /// Set active unity slot <c>shaderName</c> on the named pair (create pair/extension if needed).
-    /// Keeps sibling variants, properties, and bindings when present.
+    /// Keeps sibling variants, properties (including packed <c>type: texture</c> rows), and
+    /// bindings when present. Material Transfer strips textures separately.
     /// </summary>
     public static bool TrySetShaderName(
         VrmxtMaterialsOverrideInstance store,
@@ -204,8 +205,7 @@ public static class VrmxtMaterialsShaderAuthoring
                 {
                     existingProvider = unity.Provider;
                     existingBindings = entry.Bindings;
-                    existingProperties = VrmxtMaterialsOverrideAuthoring.WithoutTextureProperties(
-                        entry.Properties);
+                    existingProperties = entry.Properties ?? Array.Empty<VrmxtMaterialProperty>();
                     slotVariant = unity.Variant;
                     continue;
                 }
@@ -225,8 +225,8 @@ public static class VrmxtMaterialsShaderAuthoring
             var emptyUnity = emptyVariantUnity.Material as UnityMaterialOverride;
             existingProvider = emptyUnity?.Provider;
             existingBindings = emptyVariantUnity.Bindings;
-            existingProperties = VrmxtMaterialsOverrideAuthoring.WithoutTextureProperties(
-                emptyVariantUnity.Properties);
+            existingProperties =
+                emptyVariantUnity.Properties ?? Array.Empty<VrmxtMaterialProperty>();
             slotVariant = activeVariant;
             emptyVariantUnity = null;
         }

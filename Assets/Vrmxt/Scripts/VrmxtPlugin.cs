@@ -20,7 +20,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.1.11",
+    Version = "0.1.12",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT",
     AssetTypes = new[] { typeof(VrmxtManagerAsset) }
@@ -201,6 +201,7 @@ public sealed class VrmxtPlugin : Plugin
         BindPackagedParticleMaterial();
         WarmPackagedMaterialsOverrideShaders();
         BindMaterialsOverrideShaderResolve();
+        BindMaterialsOverrideActivePipeline();
         VrmxtShaderInventory.ExtraNamesProvider = () => _modShaders.Keys;
         LogAvailableShaders("OnCreate");
         Watch<bool>(nameof(EnableVrmxt), OnEnableVrmxtChanged);
@@ -237,6 +238,7 @@ public sealed class VrmxtPlugin : Plugin
         UnbindAll();
         ClearPackagedParticleMaterial();
         ClearMaterialsOverrideShaderResolve();
+        ClearMaterialsOverrideActivePipeline();
         VrmxtShaderInventory.ExtraNamesProvider = null;
         base.OnDestroy();
     }
@@ -386,6 +388,17 @@ public sealed class VrmxtPlugin : Plugin
         _modShaders.Clear();
     }
 
+    private void BindMaterialsOverrideActivePipeline()
+    {
+        VrmxtMaterialsOverrideApplier.ActivePipelineProvider =
+            VrmxtCharacterApply.DetectActivePipelineForWarudo;
+    }
+
+    private void ClearMaterialsOverrideActivePipeline()
+    {
+        VrmxtMaterialsOverrideApplier.ActivePipelineProvider = null;
+    }
+
     private void RememberModShader(Shader shader)
     {
         if (shader == null || string.IsNullOrEmpty(shader.name))
@@ -512,6 +525,20 @@ public sealed class VrmxtPlugin : Plugin
             Debug.LogWarning("VRMXT: ModHost.Assets.Load " + label + " failed: " + e.Message);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Load a packaged Material for Manager Transfer templates.
+    /// Path must be under this mod (e.g. <c>Assets/Vrmxt/Resources/…</c>).
+    /// </summary>
+    public Material TryLoadModMaterial(string assetPath)
+    {
+        if (string.IsNullOrWhiteSpace(assetPath))
+        {
+            return null;
+        }
+
+        return WarmModAsset<Material>(assetPath.Trim(), "material template");
     }
 
     private static void ClearPackagedParticleMaterial()
