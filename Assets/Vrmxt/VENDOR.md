@@ -9,7 +9,7 @@ plain C# under the mod folder so UMod exports them with the plugin.
 `Runtime/MaterialsOverride` subset below, plus `VrmxtInstance`, plus packaged
 shaders/materials). Do not fork logic in this tree — change UniVRMXT first, then
 re-copy. Namespaces match source: `UniVRMXT`, `UniVRMXT.Format`, `UniVRMXT.Vfx`,
-`UniVRMXT.MaterialsOverride`. Host scripts under `Assets/Vrmxt/Scripts/` stay global
+`UniVRMXT.MaterialsOverride`, `UniVRMXT.Mtoonxt`. Host scripts under `Assets/Vrmxt/Scripts/` stay global
 and `using` those namespaces.
 
 UMod `referencePaths` is for other **mods**, not UnityEngine DLLs. Do not put
@@ -77,15 +77,16 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Sets identity
 
 | Item | Value |
 |------|--------|
-| Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/VrmxtInstance` + particle/sample shaders |
-| Date | 2026-08-02 |
+| Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/Mtoonxt` + `Runtime/VrmxtInstance` + particle/sample shaders |
+| Date | 2026-08-17 |
 
 ## Included
 
-- Format: `VrmxtVfx.cs`, `VrmxtMaterialsOverride.cs`, `GlbChunks.cs` (includes `TryRebuild`), `GltfImageBytes.cs`
+- Format: `VrmxtVfx.cs`, `VrmxtMaterialsOverride.cs`, `VrmcMaterialsMtoonxt.cs`, `GlbChunks.cs` (includes `TryRebuild`), `GltfImageBytes.cs`
 - Vfx: Runtime, Instance, Mapper, Data, Importer, GlbTextures, NodeResolver, OwnedParticleMaterial
 - MaterialsOverride: Runtime, Applier, Instance, UnityOverrideSelector, Authoring, Exporter
   (Exporter is a compile dep of Authoring `ResolveUnityVariant`; Warudo does not call export)
+- Mtoonxt: Instance, Runtime, Applier
 - Facade: `VrmxtInstance.cs`
 - Shaders: `Shaders/VrmxtParticlesUnlit.shader` (`VRMXT/Particles Unlit`),
   `Shaders/VrmxtTestOverrideBuiltin.shader`, `Shaders/VrmxtTestOverrideURP.shader`

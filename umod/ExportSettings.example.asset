@@ -17,7 +17,7 @@ MonoBehaviour:
   - referencePaths: []
     modName: VRMXT
     modAuthor: Mira
-    modVersion: 0.1.12
+    modVersion: 0.1.13
     modDescription: 
     modAssetPath: REPLACE_ME/Assets/Vrmxt
     modExportPath: REPLACE_ME/Warudo_Data/StreamingAssets/Plugins
@@ -36,6 +36,14 @@ MonoBehaviour:
     modVersion: 1.0.0
     modDescription: Example shader-only mod (ModHost.Assets.Load)
     modAssetPath: REPLACE_ME/Assets/SampleShaderPlugin
+    modExportPath: REPLACE_ME/Warudo_Data/StreamingAssets/Plugins
+    modIcon: {fileID: 0}
+  - referencePaths: []
+    modName: VRM1SpringBoneWind
+    modAuthor: Mira
+    modVersion: 0.1.0
+    modDescription: VRM 1.0 FastSpringBone wind (stock VRM Wind is VRM 0 only)
+    modAssetPath: REPLACE_ME/Assets/Vrm1SpringBoneWind
     modExportPath: REPLACE_ME/Warudo_Data/StreamingAssets/Plugins
     modIcon: {fileID: 0}
   logLevel: 3
