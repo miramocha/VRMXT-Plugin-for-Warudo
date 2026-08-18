@@ -19,8 +19,8 @@ using Warudo.Plugins.Core.Assets.Character;
 [PluginType(
     Id = "mira.vrmxt",
     Name = "VRMXT",
-    Description = "VRMXT extensions for Warudo Characters (VFX + materials override)",
-    Version = "0.1.12",
+    Description = "VRMXT extensions for Warudo Characters (VFX + materials override + MToonXT)",
+    Version = "0.1.14",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT",
     AssetTypes = new[] { typeof(VrmxtManagerAsset) }

@@ -388,6 +388,7 @@ public sealed class VrmxtManagerAsset : Asset
                         null,
                         resolveShader
                     );
+                    VrmxtCharacterApply.ApplyMtoonxt(root, gltfJsonForApply);
                     if (applied > 0)
                     {
                         VrmxtCharacterApply.RefreshMaterialPropertiesCatalog(
@@ -1096,6 +1097,7 @@ public sealed class VrmxtManagerAsset : Asset
                 null,
                 VrmxtMaterialsOverrideApplier.ShaderResolveProvider
             );
+            VrmxtCharacterApply.ApplyMtoonxt(root, gltfJson);
             // Snapshot live props; keep packed GLB textures, omit new unpackaged maps.
             var snapped = VrmxtMaterialsOverrideAuthoring.SyncPropertiesFromLiveMaterials(
                 store,
@@ -1317,6 +1319,7 @@ public sealed class VrmxtManagerAsset : Asset
                 null,
                 resolveShader
             );
+            VrmxtCharacterApply.ApplyMtoonxt(root, gltfJson);
 
             // Clear all: null every texture slot after Apply (no texture ownership in JSON).
             // Clear if set: already cleared assigned slots before Apply; do not wipe packed

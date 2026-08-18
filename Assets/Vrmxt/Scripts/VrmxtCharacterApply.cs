@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UniVRMXT.Format;
 using UniVRMXT.MaterialsOverride;
+using UniVRMXT.Mtoonxt;
 using UniVRMXT.Vfx;
 using Warudo.Core.Utils;
 using Warudo.Plugins.Core.Assets;
@@ -11,8 +12,8 @@ using Warudo.Plugins.Core.Assets.Character;
 using Object = UnityEngine.Object;
 
 /// <summary>
-/// Post-load VRMXT applies on a Character GameObject: <c>VRMXT_sprite_particle</c> and
-/// <c>VRMXT_materials_override</c>.
+/// Post-load VRMXT applies on a Character GameObject: <c>VRMXT_sprite_particle</c>,
+/// <c>VRMXT_materials_override</c>, and <c>VRMC_materials_mtoonxt</c>.
 /// </summary>
 public static class VrmxtCharacterApply
 {
@@ -111,6 +112,14 @@ public static class VrmxtCharacterApply
             VrmxtMaterialsStockShaders.Restore(root);
         }
 
+        // MToonXT is a sibling extension. Run now when override Apply will not
+        // (no store, or materials override disabled). Override Apply path runs
+        // MToonXT after override so rule 14 holds.
+        if (result.MaterialsOverride == null)
+        {
+            attachedAny |= ApplyMtoonxt(root, glbBytes, result) > 0;
+        }
+
         if (!attachedAny)
         {
             result.Dispose();
@@ -142,6 +151,50 @@ public static class VrmxtCharacterApply
         }
 
         return RunMaterialsOverrideApply(character, root, glbBytes, result);
+    }
+
+    /// <summary>
+    /// Swap stock MToon to the pipeline MToonXT shader when <c>VRMC_materials_mtoonxt</c> is valid
+    /// and the shader UMod has warmed. Skips materials where materials-override would apply.
+    /// </summary>
+    public static int ApplyMtoonxt(GameObject root, string gltfJson)
+    {
+        if (root == null || string.IsNullOrEmpty(gltfJson))
+        {
+            return 0;
+        }
+
+        var applied = VrmcMaterialsMtoonxtApplier.Apply(
+            root,
+            gltfJson,
+            VrmxtMaterialsOverrideApplier.ShaderResolveProvider
+        );
+        if (applied > 0)
+        {
+            Debug.Log(
+                "VRMXT: MToonXT applied=" + applied + " root='" + root.name + "'."
+            );
+        }
+
+        return applied;
+    }
+
+    /// <summary>
+    /// Extract glTF JSON from <paramref name="result"/> textures or <paramref name="glbBytes"/>,
+    /// then <see cref="ApplyMtoonxt(GameObject,string)"/>.
+    /// </summary>
+    public static int ApplyMtoonxt(GameObject root, byte[] glbBytes, Result result)
+    {
+        string gltfJson = result != null && result.VfxTextures != null ? result.VfxTextures.Json : null;
+        if (string.IsNullOrEmpty(gltfJson))
+        {
+            if (glbBytes == null || !GlbChunks.TryExtractJson(glbBytes, out gltfJson))
+            {
+                return 0;
+            }
+        }
+
+        return ApplyMtoonxt(root, gltfJson);
     }
 
     private static bool TryApplyVfx(
@@ -416,6 +469,8 @@ public static class VrmxtCharacterApply
         // Always dump visibility health after apply (Poiyomi missing _MainTex / black
         // _Color / cleared stock maps are the usual "invisible override" causes).
         LogMaterialsOverrideApplyHealth(character, root, store, applied, pipeline);
+
+        ApplyMtoonxt(root, gltfJson);
 
         return applied;
     }

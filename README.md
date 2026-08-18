@@ -1,8 +1,8 @@
 # VRMXT Plugin for Warudo
 
-Warudo **consumer** plugin: attaches VRMXT particle VFX (`VRMXT_vfx`) and materials
-override (`VRMXT_materials_override`) onto Character assets after load. No authoring
-UI and no re-export from Warudo.
+Warudo **consumer** plugin: attaches VRMXT particle VFX (`VRMXT_sprite_particle`),
+materials override (`VRMXT_materials_override`), and MToonXT stencil
+(`VRMC_materials_mtoonxt`) onto Character assets after load.
 
 Open the **VRMXT** plugin settings in Warudo and use **Enable VRMXT** to turn attach
 on or off (saved across scenes). Reload the scene after toggling to refresh material
@@ -29,7 +29,7 @@ overrides; VFX clears immediately when disabled.
 
 | Path | Role |
 |------|------|
-| `Assets/Vrmxt/` | First-party plugin + vendored UniVRMXT (VFX + materials override) |
+| `Assets/Vrmxt/` | First-party plugin + vendored UniVRMXT (VFX + materials override + MToonXT) |
 | `Assets/TestPlugin/` | UMod smoke-test mod |
 | `Assets/SampleShaderPlugin/` | Example shader-only mod (`ModHost.Assets.Load`); override resolve still via VRMXT provider until a shared register lands |
 | `umod/` | ExportSettings template + backup/restore script |
