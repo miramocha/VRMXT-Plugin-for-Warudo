@@ -13,6 +13,7 @@ namespace UniVRMXT.Format
         public const string SiblingMtoonExtensionName = "VRMC_materials_mtoon";
         public const string BuiltinShaderName = "VRMXT/MToonXT10";
         public const string UrpShaderName = "VRMXT/Universal Render Pipeline/MToonXT10";
+        public const string ZTestDefault = "lessEqual";
 
         public const string ZTestProp = "_M_ZTest";
         public const string StencilPropEnabled = "_M_StencilEnabled";
@@ -72,8 +73,11 @@ namespace UniVRMXT.Format
 
             TryParseStencilObject(extension, "stencil", out var stencil);
             TryParseStencilObject(extension, "outlineStencil", out var outlineStencil);
+            TryReadEnum(extension, "zTest", ZTestDefault, TryMapCompareFunction, out var zTest);
+            TryReadOptionalRenderQueue(extension, out var renderQueue);
+            TryReadOptionalBool(extension, "zWrite", out var zWrite);
 
-            result = new VrmcMaterialsMtoonxtExtension(stencil, outlineStencil);
+            result = new VrmcMaterialsMtoonxtExtension(stencil, outlineStencil, zTest, renderQueue, zWrite);
             return true;
         }
 
@@ -180,6 +184,23 @@ namespace UniVRMXT.Format
             if (extension != null && extension.OutlineStencil != null)
             {
                 root["outlineStencil"] = BuildStencilObject(extension.OutlineStencil);
+            }
+
+            if (extension != null &&
+                !string.IsNullOrEmpty(extension.ZTest) &&
+                !string.Equals(extension.ZTest, ZTestDefault, StringComparison.Ordinal))
+            {
+                root["zTest"] = extension.ZTest;
+            }
+
+            if (extension != null && extension.RenderQueue.HasValue)
+            {
+                root["renderQueue"] = extension.RenderQueue.Value;
+            }
+
+            if (extension != null && extension.ZWrite.HasValue)
+            {
+                root["zWrite"] = extension.ZWrite.Value;
             }
 
             return root;
@@ -336,6 +357,42 @@ namespace UniVRMXT.Format
             return true;
         }
 
+        /// <summary>
+        /// Missing key → null (keep MToon queue). Invalid → null, does not fail parse.
+        /// Inclusive Unity queue range <c>[0, 5000]</c>.
+        /// </summary>
+        private static void TryReadOptionalRenderQueue(JObject obj, out int? queue)
+        {
+            queue = null;
+            if (!TryGetProperty(obj, "renderQueue", out var token))
+            {
+                return;
+            }
+
+            if (!TryGetInt32(token, out var parsed) || parsed < 0 || parsed > 5000)
+            {
+                return;
+            }
+
+            queue = parsed;
+        }
+
+        private static void TryReadOptionalBool(JObject obj, string name, out bool? value)
+        {
+            value = null;
+            if (!TryGetProperty(obj, name, out var token))
+            {
+                return;
+            }
+
+            if (token.Type != JTokenType.Boolean)
+            {
+                return;
+            }
+
+            value = token.Value<bool>();
+        }
+
         private static bool TryReadEnum(
             JObject obj,
             string name,
@@ -398,15 +455,36 @@ namespace UniVRMXT.Format
     {
         public VrmcMaterialsMtoonxtExtension(
             VrmcMaterialsMtoonxtStencil stencil,
-            VrmcMaterialsMtoonxtStencil outlineStencil)
+            VrmcMaterialsMtoonxtStencil outlineStencil,
+            string zTest = null,
+            int? renderQueue = null,
+            bool? zWrite = null)
         {
             Stencil = stencil;
             OutlineStencil = outlineStencil;
+            ZTest = string.IsNullOrEmpty(zTest) ? VrmcMaterialsMtoonxt.ZTestDefault : zTest;
+            RenderQueue = renderQueue;
+            ZWrite = zWrite;
         }
 
         public VrmcMaterialsMtoonxtStencil Stencil { get; }
 
         public VrmcMaterialsMtoonxtStencil OutlineStencil { get; }
+
+        public string ZTest { get; }
+
+        public int? RenderQueue { get; }
+
+        public bool? ZWrite { get; }
+
+        public int ZTestUnityInt
+        {
+            get
+            {
+                VrmcMaterialsMtoonxt.TryMapCompareFunction(ZTest, out var value);
+                return value;
+            }
+        }
     }
 
     public sealed class VrmcMaterialsMtoonxtStencil

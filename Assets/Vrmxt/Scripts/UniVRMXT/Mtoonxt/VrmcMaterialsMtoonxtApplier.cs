@@ -3,6 +3,7 @@ using Newtonsoft.Json.Linq;
 using UniVRMXT.Format;
 using UniVRMXT.MaterialsOverride;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace UniVRMXT.Mtoonxt
 {
@@ -106,11 +107,15 @@ namespace UniVRMXT.Mtoonxt
                     }
 
                     material.shader = shader;
-                    // Shader switch leaves new stencil floats at 0 (Disabled). GPU Comp 0
-                    // fails the test. Write stencil-off, then overlay JSON extras.
+                    // Shader switch leaves new floats at 0 (Disabled Comp / ZTest)
+                    // and resets Queue/keywords to the ShaderLab tags (Opaque/Geometry).
+                    RestoreUnityMtoonPassSettings(material);
                     ApplyStencilOffDefaults(material);
                     ApplyStencil(material, xt.Stencil, outline: false);
                     ApplyStencil(material, xt.OutlineStencil, outline: true);
+                    ApplyZTest(material, xt.ZTest);
+                    ApplyRenderQueue(material, xt.RenderQueue);
+                    ApplyZWrite(material, xt.ZWrite);
                     swappedAny = true;
                 }
 
@@ -232,7 +237,144 @@ namespace UniVRMXT.Mtoonxt
         }
 
         /// <summary>
-        /// Shader switch / Unity enum Disabled leave Comp at 0. Restore that pass only.
+        /// Re-apply stock MToon blend / ZWrite / cull / queue / keywords from
+        /// <c>_AlphaMode</c> after a shader swap. Same mapping as UniVRM
+        /// <c>MToonValidator</c> without a VRM10 assembly reference.
+        /// </summary>
+        public static void RestoreUnityMtoonPassSettings(Material material)
+        {
+            if (material == null || !material.HasProperty("_AlphaMode"))
+            {
+                return;
+            }
+
+            var alphaMode = material.GetInt("_AlphaMode");
+            var zWriteOn = material.HasProperty("_TransparentWithZWrite")
+                && material.GetInt("_TransparentWithZWrite") != 0;
+            var renderQueueOffset = material.HasProperty("_RenderQueueOffset")
+                ? material.GetInt("_RenderQueueOffset")
+                : 0;
+            var doubleSided = material.HasProperty("_DoubleSided")
+                && material.GetInt("_DoubleSided") != 0;
+
+            switch (alphaMode)
+            {
+                case 1:
+                    material.SetOverrideTag("RenderType", "TransparentCutout");
+                    TrySetFloat(material, "_M_SrcBlend", (float)BlendMode.One);
+                    TrySetFloat(material, "_M_DstBlend", (float)BlendMode.Zero);
+                    TrySetFloat(material, "_M_ZWrite", 1f);
+                    TrySetFloat(material, "_M_AlphaToMask", 1f);
+                    renderQueueOffset = 0;
+                    material.renderQueue = (int)RenderQueue.AlphaTest;
+                    break;
+                case 2 when zWriteOn:
+                    material.SetOverrideTag("RenderType", "Transparent");
+                    TrySetFloat(material, "_M_SrcBlend", (float)BlendMode.SrcAlpha);
+                    TrySetFloat(material, "_M_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+                    TrySetFloat(material, "_M_ZWrite", 1f);
+                    TrySetFloat(material, "_M_AlphaToMask", 0f);
+                    renderQueueOffset = Mathf.Clamp(renderQueueOffset, 0, 9);
+                    material.renderQueue = (int)RenderQueue.GeometryLast + 1 + renderQueueOffset;
+                    break;
+                case 2:
+                    material.SetOverrideTag("RenderType", "Transparent");
+                    TrySetFloat(material, "_M_SrcBlend", (float)BlendMode.SrcAlpha);
+                    TrySetFloat(material, "_M_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+                    TrySetFloat(material, "_M_ZWrite", 0f);
+                    TrySetFloat(material, "_M_AlphaToMask", 0f);
+                    renderQueueOffset = Mathf.Clamp(renderQueueOffset, -9, 0);
+                    material.renderQueue = (int)RenderQueue.Transparent + renderQueueOffset;
+                    break;
+                default:
+                    material.SetOverrideTag("RenderType", "Opaque");
+                    TrySetFloat(material, "_M_SrcBlend", (float)BlendMode.One);
+                    TrySetFloat(material, "_M_DstBlend", (float)BlendMode.Zero);
+                    TrySetFloat(material, "_M_ZWrite", 1f);
+                    TrySetFloat(material, "_M_AlphaToMask", 0f);
+                    renderQueueOffset = 0;
+                    material.renderQueue = (int)RenderQueue.Geometry;
+                    break;
+            }
+
+            TrySetFloat(material, "_M_CullMode", doubleSided ? 0f : 2f);
+            if (material.HasProperty("_RenderQueueOffset"))
+            {
+                material.SetInt("_RenderQueueOffset", renderQueueOffset);
+            }
+
+            SetKeyword(material, "_ALPHATEST_ON", alphaMode == 1);
+            SetKeyword(material, "_ALPHABLEND_ON", alphaMode == 2);
+            SetKeyword(material, "_ALPHAPREMULTIPLY_ON", false);
+            SetKeyword(
+                material,
+                "_NORMALMAP",
+                material.HasProperty("_BumpMap") && material.GetTexture("_BumpMap") != null);
+            SetKeyword(
+                material,
+                "_MTOON_EMISSIVEMAP",
+                material.HasProperty("_EmissionMap") && material.GetTexture("_EmissionMap") != null);
+            SetKeyword(
+                material,
+                "_MTOON_RIMMAP",
+                (material.HasProperty("_MatcapTex") && material.GetTexture("_MatcapTex") != null)
+                    || (material.HasProperty("_RimTex") && material.GetTexture("_RimTex") != null));
+            SetKeyword(
+                material,
+                "_MTOON_PARAMETERMAP",
+                (material.HasProperty("_ShadingShiftTex") && material.GetTexture("_ShadingShiftTex") != null)
+                    || (material.HasProperty("_OutlineWidthTex") && material.GetTexture("_OutlineWidthTex") != null)
+                    || (material.HasProperty("_UvAnimMaskTex") && material.GetTexture("_UvAnimMaskTex") != null));
+
+            var outlineMode = material.HasProperty("_OutlineWidthMode")
+                ? material.GetInt("_OutlineWidthMode")
+                : 0;
+            SetKeyword(material, "_MTOON_OUTLINE_WORLD", outlineMode == 1);
+            SetKeyword(material, "_MTOON_OUTLINE_SCREEN", outlineMode == 2);
+        }
+
+        public static void ApplyZTest(Material material, string zTest)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            if (VrmcMaterialsMtoonxt.TryMapCompareFunction(zTest, out var unityInt) && unityInt != 0)
+            {
+                TrySetFloat(material, VrmcMaterialsMtoonxt.ZTestProp, unityInt);
+                return;
+            }
+
+            if (IsUninitializedComp(material, VrmcMaterialsMtoonxt.ZTestProp))
+            {
+                TrySetFloat(material, VrmcMaterialsMtoonxt.ZTestProp, DefaultZTestUnityFloat());
+            }
+        }
+
+        public static void ApplyRenderQueue(Material material, int? renderQueue)
+        {
+            if (material == null || !renderQueue.HasValue)
+            {
+                return;
+            }
+
+            material.renderQueue = renderQueue.Value;
+        }
+
+        public static void ApplyZWrite(Material material, bool? zWrite)
+        {
+            if (material == null || !zWrite.HasValue)
+            {
+                return;
+            }
+
+            TrySetFloat(material, "_M_ZWrite", zWrite.Value ? 1f : 0f);
+        }
+
+        /// <summary>
+        /// Shader switch / Unity enum Disabled leave Comp / ZTest at 0. Restore those
+        /// floats only.
         /// </summary>
         public static void EnsureStencilOffIfUninitialized(Material material)
         {
@@ -258,6 +400,19 @@ namespace UniVRMXT.Mtoonxt
             {
                 TrySetFloat(material, VrmcMaterialsMtoonxt.OutlineStencilPropComp, 8f);
             }
+
+            if (IsUninitializedComp(material, VrmcMaterialsMtoonxt.ZTestProp))
+            {
+                ApplyZTest(material, VrmcMaterialsMtoonxt.ZTestDefault);
+            }
+        }
+
+        private static float DefaultZTestUnityFloat()
+        {
+            VrmcMaterialsMtoonxt.TryMapCompareFunction(
+                VrmcMaterialsMtoonxt.ZTestDefault,
+                out var unityInt);
+            return unityInt;
         }
 
         private static bool IsEnabled(Material material, string propertyName)
@@ -299,6 +454,18 @@ namespace UniVRMXT.Mtoonxt
             if (material.HasProperty(name))
             {
                 material.SetFloat(name, value);
+            }
+        }
+
+        private static void SetKeyword(Material material, string keyword, bool enabled)
+        {
+            if (enabled)
+            {
+                material.EnableKeyword(keyword);
+            }
+            else
+            {
+                material.DisableKeyword(keyword);
             }
         }
     }
