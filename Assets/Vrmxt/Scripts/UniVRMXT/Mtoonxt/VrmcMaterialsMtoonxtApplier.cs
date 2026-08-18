@@ -7,11 +7,14 @@ using UnityEngine;
 namespace UniVRMXT.Mtoonxt
 {
     /// <summary>
-    /// Swap stock MToon to <c>VRMXT/MToon10</c> and write stencil extras.
+    /// Swap stock MToon to the pipeline MToonXT shader and write stencil extras.
     /// Skips when <c>VRMXT_materials_override</c> would apply (spec rule 14).
     /// </summary>
     public static class VrmcMaterialsMtoonxtApplier
     {
+        private static readonly VrmcMaterialsMtoonxtStencil StencilOff =
+            new VrmcMaterialsMtoonxtStencil(false, 0, 255, 255, "always", "keep", "keep", "keep");
+
         public static int Apply(
             GameObject root,
             string gltfJson,
@@ -47,15 +50,21 @@ namespace UniVRMXT.Mtoonxt
                 return 0;
             }
 
+            var pipeline = VrmxtMaterialsOverrideApplier.DetectActivePipeline();
+            var shaderName = ShaderNameForPipeline(pipeline);
+            if (string.IsNullOrEmpty(shaderName))
+            {
+                return 0;
+            }
+
             var shader = VrmxtMaterialsOverrideApplier.ResolveShader(
-                VrmcMaterialsMtoonxt.BuiltinShaderName,
+                shaderName,
                 resolveShader);
             if (shader == null)
             {
                 return 0;
             }
 
-            var pipeline = VrmxtMaterialsOverrideApplier.DetectActivePipeline();
             var applied = 0;
             var pairs = store.Pairs;
             for (var i = 0; i < pairs.Count; i++)
@@ -97,6 +106,9 @@ namespace UniVRMXT.Mtoonxt
                     }
 
                     material.shader = shader;
+                    // Shader switch leaves new stencil floats at 0 (Disabled). GPU Comp 0
+                    // fails the test. Write stencil-off, then overlay JSON extras.
+                    ApplyStencilOffDefaults(material);
                     ApplyStencil(material, xt.Stencil, outline: false);
                     ApplyStencil(material, xt.OutlineStencil, outline: true);
                     swappedAny = true;
@@ -197,6 +209,69 @@ namespace UniVRMXT.Mtoonxt
             return VrmxtMaterialsOverrideApplier.ResolveShader(unity.ShaderName, resolveShader) != null;
         }
 
+        public static string ShaderNameForPipeline(RenderPipelineVariant pipeline)
+        {
+            switch (pipeline)
+            {
+                case RenderPipelineVariant.Urp:
+                    return VrmcMaterialsMtoonxt.UrpShaderName;
+                case RenderPipelineVariant.Builtin:
+                    return VrmcMaterialsMtoonxt.BuiltinShaderName;
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// Spec stencil-off: Always / Keep. Comp 0 is Unity Disabled and hides the mesh.
+        /// </summary>
+        public static void ApplyStencilOffDefaults(Material material)
+        {
+            ApplyStencil(material, StencilOff, outline: false);
+            ApplyStencil(material, StencilOff, outline: true);
+        }
+
+        /// <summary>
+        /// Shader switch / Unity enum Disabled leave Comp at 0. Restore that pass only.
+        /// </summary>
+        public static void EnsureStencilOffIfUninitialized(Material material)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            if (!IsEnabled(material, VrmcMaterialsMtoonxt.StencilPropEnabled))
+            {
+                ApplyStencil(material, StencilOff, outline: false);
+            }
+            else if (IsUninitializedComp(material, VrmcMaterialsMtoonxt.StencilPropComp))
+            {
+                TrySetFloat(material, VrmcMaterialsMtoonxt.StencilPropComp, 8f);
+            }
+
+            if (!IsEnabled(material, VrmcMaterialsMtoonxt.OutlineStencilPropEnabled))
+            {
+                ApplyStencil(material, StencilOff, outline: true);
+            }
+            else if (IsUninitializedComp(material, VrmcMaterialsMtoonxt.OutlineStencilPropComp))
+            {
+                TrySetFloat(material, VrmcMaterialsMtoonxt.OutlineStencilPropComp, 8f);
+            }
+        }
+
+        private static bool IsEnabled(Material material, string propertyName)
+        {
+            return material.HasProperty(propertyName)
+                && material.GetFloat(propertyName) >= 0.5f;
+        }
+
+        private static bool IsUninitializedComp(Material material, string propertyName)
+        {
+            return material.HasProperty(propertyName)
+                && Mathf.Approximately(material.GetFloat(propertyName), 0f);
+        }
+
         private static void ApplyStencil(Material material, VrmcMaterialsMtoonxtStencil stencil, bool outline)
         {
             if (material == null || stencil == null)
@@ -204,17 +279,19 @@ namespace UniVRMXT.Mtoonxt
                 return;
             }
 
+            var applied = stencil.Enabled ? stencil : StencilOff;
             var prefix = outline
                 ? "_M_OutlineStencil"
                 : "_M_Stencil";
 
-            TrySetFloat(material, prefix + "Ref", stencil.Ref);
-            TrySetFloat(material, prefix + "ReadMask", stencil.ReadMask);
-            TrySetFloat(material, prefix + "WriteMask", stencil.WriteMask);
-            TrySetFloat(material, prefix + "Comp", stencil.CompUnityInt);
-            TrySetFloat(material, prefix + "Pass", stencil.PassUnityInt);
-            TrySetFloat(material, prefix + "Fail", stencil.FailUnityInt);
-            TrySetFloat(material, prefix + "ZFail", stencil.ZFailUnityInt);
+            TrySetFloat(material, prefix + "Enabled", applied.Enabled ? 1f : 0f);
+            TrySetFloat(material, prefix + "Ref", applied.Ref);
+            TrySetFloat(material, prefix + "ReadMask", applied.ReadMask);
+            TrySetFloat(material, prefix + "WriteMask", applied.WriteMask);
+            TrySetFloat(material, prefix + "Comp", applied.CompUnityInt);
+            TrySetFloat(material, prefix + "Pass", applied.PassUnityInt);
+            TrySetFloat(material, prefix + "Fail", applied.FailUnityInt);
+            TrySetFloat(material, prefix + "ZFail", applied.ZFailUnityInt);
         }
 
         private static void TrySetFloat(Material material, string name, float value)

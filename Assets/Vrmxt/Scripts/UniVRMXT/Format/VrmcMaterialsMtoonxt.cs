@@ -11,8 +11,11 @@ namespace UniVRMXT.Format
         public const string ExtensionName = "VRMC_materials_mtoonxt";
         public const string SpecVersionValue = "1.0";
         public const string SiblingMtoonExtensionName = "VRMC_materials_mtoon";
-        public const string BuiltinShaderName = "VRMXT/MToon10";
+        public const string BuiltinShaderName = "VRMXT/MToonXT10";
+        public const string UrpShaderName = "VRMXT/Universal Render Pipeline/MToonXT10";
 
+        public const string ZTestProp = "_M_ZTest";
+        public const string StencilPropEnabled = "_M_StencilEnabled";
         public const string StencilPropRef = "_M_StencilRef";
         public const string StencilPropReadMask = "_M_StencilReadMask";
         public const string StencilPropWriteMask = "_M_StencilWriteMask";
@@ -21,6 +24,7 @@ namespace UniVRMXT.Format
         public const string StencilPropFail = "_M_StencilFail";
         public const string StencilPropZFail = "_M_StencilZFail";
 
+        public const string OutlineStencilPropEnabled = "_M_OutlineStencilEnabled";
         public const string OutlineStencilPropRef = "_M_OutlineStencilRef";
         public const string OutlineStencilPropReadMask = "_M_OutlineStencilReadMask";
         public const string OutlineStencilPropWriteMask = "_M_OutlineStencilWriteMask";
@@ -185,6 +189,7 @@ namespace UniVRMXT.Format
         {
             return new JObject
             {
+                ["enabled"] = stencil.Enabled,
                 ["ref"] = stencil.Ref,
                 ["readMask"] = stencil.ReadMask,
                 ["writeMask"] = stencil.WriteMask,
@@ -271,7 +276,8 @@ namespace UniVRMXT.Format
                 return false;
             }
 
-            if (!TryReadByte(obj, "ref", 0, out var reference) ||
+            if (!TryReadBool(obj, "enabled", false, out var enabled) ||
+                !TryReadByte(obj, "ref", 0, out var reference) ||
                 !TryReadByte(obj, "readMask", 255, out var readMask) ||
                 !TryReadByte(obj, "writeMask", 255, out var writeMask) ||
                 !TryReadEnum(obj, "comp", "always", TryMapCompareFunction, out var comp) ||
@@ -283,6 +289,7 @@ namespace UniVRMXT.Format
             }
 
             stencil = new VrmcMaterialsMtoonxtStencil(
+                enabled,
                 reference,
                 readMask,
                 writeMask,
@@ -290,6 +297,24 @@ namespace UniVRMXT.Format
                 pass,
                 fail,
                 zfail);
+            return true;
+        }
+
+        private static bool TryReadBool(JObject obj, string name, bool defaultValue, out bool value)
+        {
+            value = defaultValue;
+            if (!TryGetProperty(obj, name, out var token))
+            {
+                return true;
+            }
+
+            if (token.Type != JTokenType.Boolean)
+            {
+                value = false;
+                return false;
+            }
+
+            value = token.Value<bool>();
             return true;
         }
 
@@ -387,6 +412,7 @@ namespace UniVRMXT.Format
     public sealed class VrmcMaterialsMtoonxtStencil
     {
         public VrmcMaterialsMtoonxtStencil(
+            bool enabled,
             int reference,
             int readMask,
             int writeMask,
@@ -395,6 +421,7 @@ namespace UniVRMXT.Format
             string fail,
             string zfail)
         {
+            Enabled = enabled;
             Ref = reference;
             ReadMask = readMask;
             WriteMask = writeMask;
@@ -403,6 +430,8 @@ namespace UniVRMXT.Format
             Fail = fail;
             ZFail = zfail;
         }
+
+        public bool Enabled { get; }
 
         public int Ref { get; }
         public int ReadMask { get; }

@@ -154,7 +154,7 @@ public static class VrmxtCharacterApply
     }
 
     /// <summary>
-    /// Swap stock MToon to <c>VRMXT/MToon10</c> when <c>VRMC_materials_mtoonxt</c> is valid
+    /// Swap stock MToon to the pipeline MToonXT shader when <c>VRMC_materials_mtoonxt</c> is valid
     /// and the shader UMod has warmed. Skips materials where materials-override would apply.
     /// </summary>
     public static int ApplyMtoonxt(GameObject root, string gltfJson)
