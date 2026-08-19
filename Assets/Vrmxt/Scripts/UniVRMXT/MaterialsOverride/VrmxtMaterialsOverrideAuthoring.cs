@@ -12,7 +12,7 @@ namespace UniVRMXT.MaterialsOverride
     /// </summary>
     public static class VrmxtMaterialsOverrideAuthoring
     {
-        public const string DefaultProviderId = "com.miramocha.univrmxt";
+        public const string DefaultProviderId = "com.vrmxt.univrmxt";
 
         /// <summary>
         /// UniVRM / VRM 1.0 stock MToon — not a VRMXT override target. Leave on
