@@ -6,6 +6,8 @@ namespace UniVRMXT.Format
 {
     /// <summary>
     /// Compile <c>op</c> + material indices to GPU Ref / compare / pass.
+    /// One Ref table for body and outline. Clip lists resolve writers via body
+    /// <c>stencil.op</c> <c>write</c>.
     /// </summary>
     public static class VrmcMaterialsMtoonxtStencilCompiler
     {
@@ -22,72 +24,19 @@ namespace UniVRMXT.Format
                 return;
             }
 
-            CompilePass(extrasByIndex, count, body: true, body, outline);
-            CompilePass(extrasByIndex, count, body: false, body, outline);
-        }
-
-        private static void CompilePass(
-            IReadOnlyList<VrmcMaterialsMtoonxtExtension> extrasByIndex,
-            int count,
-            bool body,
-            VrmcMaterialsMtoonxtStencil[] bodyOut,
-            VrmcMaterialsMtoonxtStencil[] outlineOut)
-        {
             var sets = new Dictionary<string, int[]>(StringComparer.Ordinal);
             var writerToKeys = new Dictionary<int, HashSet<string>>();
 
             for (var i = 0; i < count; i++)
             {
-                var stencil = GetSource(extrasByIndex[i], body);
-                if (stencil == null || !stencil.HasOp)
-                {
-                    continue;
-                }
-
-                if (string.Equals(stencil.Op, VrmcMaterialsMtoonxtStencil.OpSame, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (string.Equals(stencil.Op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (!TryNormalizeReaderSet(
-                        stencil,
-                        i,
-                        count,
-                        extrasByIndex,
-                        body,
-                        out var sorted,
-                        out var key))
-                {
-                    continue;
-                }
-
-                sets[key] = sorted;
-                RegisterWriters(writerToKeys, sorted, key);
+                CollectReaderSet(extrasByIndex, count, i, GetSource(extrasByIndex[i], body: true), sets, writerToKeys);
+                CollectReaderSet(extrasByIndex, count, i, GetSource(extrasByIndex[i], body: false), sets, writerToKeys);
             }
 
             for (var i = 0; i < count; i++)
             {
-                var stencil = GetSource(extrasByIndex[i], body);
-                if (stencil == null ||
-                    !string.Equals(stencil.Op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (writerToKeys.ContainsKey(i))
-                {
-                    continue;
-                }
-
-                var singleton = new[] { i };
-                var key = MakeKey(singleton);
-                sets[key] = singleton;
-                RegisterWriters(writerToKeys, singleton, key);
+                CollectUnlistedWrite(GetSource(extrasByIndex[i], body: true), i, sets, writerToKeys);
+                CollectUnlistedWrite(GetSource(extrasByIndex[i], body: false), i, sets, writerToKeys);
             }
 
             var invalidKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -120,32 +69,88 @@ namespace UniVRMXT.Format
 
             for (var i = 0; i < count; i++)
             {
-                var source = GetSource(extrasByIndex[i], body);
-                var compiled = CompileOne(
+                body[i] = CompileOne(
                     i,
-                    source,
-                    body,
+                    GetSource(extrasByIndex[i], body: true),
+                    isBody: true,
                     extrasByIndex,
                     count,
                     writerToKeys,
                     invalidKeys,
                     refByKey,
-                    bodyOut);
-                if (body)
-                {
-                    bodyOut[i] = compiled;
-                }
-                else
-                {
-                    outlineOut[i] = compiled;
-                }
+                    body);
             }
+
+            for (var i = 0; i < count; i++)
+            {
+                outline[i] = CompileOne(
+                    i,
+                    GetSource(extrasByIndex[i], body: false),
+                    isBody: false,
+                    extrasByIndex,
+                    count,
+                    writerToKeys,
+                    invalidKeys,
+                    refByKey,
+                    body);
+            }
+        }
+
+        private static void CollectReaderSet(
+            IReadOnlyList<VrmcMaterialsMtoonxtExtension> extrasByIndex,
+            int count,
+            int readerIndex,
+            VrmcMaterialsMtoonxtStencil stencil,
+            Dictionary<string, int[]> sets,
+            Dictionary<int, HashSet<string>> writerToKeys)
+        {
+            if (stencil == null || !stencil.HasOp)
+            {
+                return;
+            }
+
+            if (string.Equals(stencil.Op, VrmcMaterialsMtoonxtStencil.OpSame, StringComparison.Ordinal) ||
+                string.Equals(stencil.Op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!TryNormalizeReaderSet(stencil, readerIndex, count, extrasByIndex, out var sorted, out var key))
+            {
+                return;
+            }
+
+            sets[key] = sorted;
+            RegisterWriters(writerToKeys, sorted, key);
+        }
+
+        private static void CollectUnlistedWrite(
+            VrmcMaterialsMtoonxtStencil stencil,
+            int index,
+            Dictionary<string, int[]> sets,
+            Dictionary<int, HashSet<string>> writerToKeys)
+        {
+            if (stencil == null ||
+                !string.Equals(stencil.Op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (writerToKeys.ContainsKey(index))
+            {
+                return;
+            }
+
+            var singleton = new[] { index };
+            var key = MakeKey(singleton);
+            sets[key] = singleton;
+            RegisterWriters(writerToKeys, singleton, key);
         }
 
         private static VrmcMaterialsMtoonxtStencil CompileOne(
             int index,
             VrmcMaterialsMtoonxtStencil source,
-            bool body,
+            bool isBody,
             IReadOnlyList<VrmcMaterialsMtoonxtExtension> extrasByIndex,
             int count,
             Dictionary<int, HashSet<string>> writerToKeys,
@@ -160,7 +165,7 @@ namespace UniVRMXT.Format
 
             if (string.Equals(source.Op, VrmcMaterialsMtoonxtStencil.OpSame, StringComparison.Ordinal))
             {
-                if (body)
+                if (isBody)
                 {
                     return null;
                 }
@@ -194,7 +199,6 @@ namespace UniVRMXT.Format
                     index,
                     count,
                     extrasByIndex,
-                    body,
                     out _,
                     out var readerKey) ||
                 invalidKeys.Contains(readerKey) ||
@@ -221,7 +225,6 @@ namespace UniVRMXT.Format
             int readerIndex,
             int materialCount,
             IReadOnlyList<VrmcMaterialsMtoonxtExtension> extrasByIndex,
-            bool body,
             out int[] sorted,
             out string key)
         {
@@ -241,7 +244,7 @@ namespace UniVRMXT.Format
                     return false;
                 }
 
-                var writer = GetSource(extrasByIndex[writerIndex], body);
+                var writer = GetBodyWrite(extrasByIndex[writerIndex]);
                 if (writer == null ||
                     !string.Equals(writer.Op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
                 {
@@ -260,6 +263,11 @@ namespace UniVRMXT.Format
             unique.CopyTo(sorted);
             key = MakeKey(sorted);
             return true;
+        }
+
+        private static VrmcMaterialsMtoonxtStencil GetBodyWrite(VrmcMaterialsMtoonxtExtension extra)
+        {
+            return extra != null ? extra.Stencil : null;
         }
 
         private static void RegisterWriters(

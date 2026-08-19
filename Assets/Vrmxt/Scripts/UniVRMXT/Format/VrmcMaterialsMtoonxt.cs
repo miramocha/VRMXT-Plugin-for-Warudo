@@ -236,6 +236,40 @@ namespace UniVRMXT.Format
                 || string.Equals(op, VrmcMaterialsMtoonxtStencil.OpOutside, StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// Remap clip <c>materials</c> indices. False if any source index fails to map
+        /// (keep the original list).
+        /// </summary>
+        public static bool TryMapClipMaterialIndices(
+            IReadOnlyList<int> source,
+            Func<int, int?> resolve,
+            out int[] mapped)
+        {
+            mapped = null;
+            if (source == null || source.Count == 0 || resolve == null)
+            {
+                return false;
+            }
+
+            var list = new List<int>(source.Count);
+            for (var i = 0; i < source.Count; i++)
+            {
+                var next = resolve(source[i]);
+                if (!next.HasValue)
+                {
+                    return false;
+                }
+
+                if (!list.Contains(next.Value))
+                {
+                    list.Add(next.Value);
+                }
+            }
+
+            mapped = list.ToArray();
+            return mapped.Length > 0;
+        }
+
         private static bool TryGetExtensionObject(JToken root, out JObject extension)
         {
             extension = null;
