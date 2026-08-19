@@ -66,6 +66,9 @@ namespace UniVRMXT.Mtoonxt
                 return 0;
             }
 
+            var extrasByIndex = BuildExtrasByIndex(gltfRoot, store);
+            VrmcMaterialsMtoonxtStencilCompiler.Compile(extrasByIndex, out var compiledBody, out var compiledOutline);
+
             var applied = 0;
             var pairs = store.Pairs;
             for (var i = 0; i < pairs.Count; i++)
@@ -96,6 +99,15 @@ namespace UniVRMXT.Mtoonxt
                     continue;
                 }
 
+                var gltfIndex = pair.GltfMaterialIndex;
+                VrmcMaterialsMtoonxtStencil bodyStencil = null;
+                VrmcMaterialsMtoonxtStencil outlineStencil = null;
+                if (gltfIndex >= 0 && gltfIndex < compiledBody.Length)
+                {
+                    bodyStencil = compiledBody[gltfIndex];
+                    outlineStencil = compiledOutline[gltfIndex];
+                }
+
                 var swappedAny = false;
                 foreach (var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
                              root,
@@ -111,10 +123,10 @@ namespace UniVRMXT.Mtoonxt
                     // and resets Queue/keywords to the ShaderLab tags (Opaque/Geometry).
                     RestoreUnityMtoonPassSettings(material);
                     ApplyStencilOffDefaults(material);
-                    ApplyStencil(material, xt.Stencil, outline: false);
-                    ApplyStencil(material, xt.OutlineStencil, outline: true);
+                    ApplyStencil(material, bodyStencil, outline: false);
+                    ApplyStencil(material, outlineStencil, outline: true);
                     ApplyZTest(material, xt.ZTest);
-                    ApplyRenderQueue(material, xt.RenderQueue);
+                    ApplyStencilDrawOrder(material, bodyStencil);
                     ApplyZWrite(material, xt.ZWrite);
                     swappedAny = true;
                 }
@@ -126,6 +138,34 @@ namespace UniVRMXT.Mtoonxt
             }
 
             return applied;
+        }
+
+        private static VrmcMaterialsMtoonxtExtension[] BuildExtrasByIndex(
+            JObject gltfRoot,
+            VrmcMaterialsMtoonxtInstance store)
+        {
+            var materials = gltfRoot["materials"] as JArray;
+            var count = materials != null ? materials.Count : 0;
+            var extras = new VrmcMaterialsMtoonxtExtension[count];
+            var pairs = store.Pairs;
+            for (var i = 0; i < pairs.Count; i++)
+            {
+                var pair = pairs[i];
+                if (pair == null ||
+                    pair.GltfMaterialIndex < 0 ||
+                    pair.GltfMaterialIndex >= count ||
+                    string.IsNullOrEmpty(pair.ExtensionJson))
+                {
+                    continue;
+                }
+
+                if (VrmcMaterialsMtoonxt.TryParse(pair.ExtensionJson, out var xt))
+                {
+                    extras[pair.GltfMaterialIndex] = xt;
+                }
+            }
+
+            return extras;
         }
 
         private static bool TryGetMaterialObject(
@@ -352,14 +392,44 @@ namespace UniVRMXT.Mtoonxt
             }
         }
 
-        public static void ApplyRenderQueue(Material material, int? renderQueue)
+        /// <summary>
+        /// Cutout face meshes often list iris before sclera. Shift body <c>write</c>
+        /// two Unity queue slots and <c>inside</c> one slot before the mapped queue so
+        /// the stamp lands, then iris clips, then skin/eyelids at the mapped slot can
+        /// cover leftover iris-card pixels. <c>outside</c> (hair punch) stays mapped.
+        /// </summary>
+        public static void ApplyStencilDrawOrder(
+            Material material,
+            VrmcMaterialsMtoonxtStencil compiledBody)
         {
-            if (material == null || !renderQueue.HasValue)
+            if (material == null || compiledBody == null || !compiledBody.Enabled)
             {
                 return;
             }
 
-            material.renderQueue = renderQueue.Value;
+            var delta = 0;
+            if (string.Equals(compiledBody.Pass, "replace", StringComparison.Ordinal))
+            {
+                delta = -2;
+            }
+            else if (string.Equals(compiledBody.Comp, "equal", StringComparison.Ordinal) &&
+                     string.Equals(compiledBody.Pass, "keep", StringComparison.Ordinal))
+            {
+                delta = -1;
+            }
+
+            if (delta == 0)
+            {
+                return;
+            }
+
+            var next = (long)material.renderQueue + delta;
+            if (next < 0 || next > 5000)
+            {
+                return;
+            }
+
+            material.renderQueue = (int)next;
         }
 
         public static void ApplyZWrite(Material material, bool? zWrite)
