@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
+using UniVRMXT.Format;
 using UniVRMXT.MaterialsOverride;
 using UniVRMXT.Vfx;
 using UnityEngine;
@@ -701,6 +702,11 @@ public sealed class VrmxtPlugin : Plugin
         if (bound.Character != null)
         {
             var root = VrmxtCharacterApply.TryFindCharacterRoot(bound.Character);
+            if (root != null)
+            {
+                VrmcMaterialsMtoonxtStencilRefs.Release(root.GetInstanceID());
+            }
+
             VrmxtMaterialsStockShaders.Forget(root);
 
             if (bound.SourceWatchHandle != Guid.Empty)
