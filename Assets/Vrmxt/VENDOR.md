@@ -86,7 +86,7 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Sets identity
 - Vfx: Runtime, Instance, Mapper, Data, Importer, GlbTextures, NodeResolver, OwnedParticleMaterial
 - MaterialsOverride: Runtime, Applier, Instance, UnityOverrideSelector, Authoring, Exporter
   (Exporter is a compile dep of Authoring `ResolveUnityVariant`; Warudo does not call export)
-- Mtoonxt: Instance, Runtime, Applier
+- Mtoonxt: Instance, Runtime, Applier, Authoring
 - Facade: `VrmxtInstance.cs`
 - Shaders: `Shaders/VrmxtParticlesUnlit.shader` (`VRMXT/Particles Unlit`),
   `Shaders/VrmxtTestOverrideBuiltin.shader`, `Shaders/VrmxtTestOverrideURP.shader`
