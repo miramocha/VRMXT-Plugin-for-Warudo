@@ -65,6 +65,7 @@ namespace UniVRMXT.Mtoonxt
             if (found.Count > 0)
             {
                 store.SetPairs(found);
+                VrmcMaterialsMtoonxtAuthoring.PopulateFromExtensionJson(root, store);
             }
 
             return true;
