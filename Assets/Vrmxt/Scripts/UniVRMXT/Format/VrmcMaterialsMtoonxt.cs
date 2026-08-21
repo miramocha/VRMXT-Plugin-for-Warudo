@@ -17,6 +17,18 @@ namespace UniVRMXT.Format
 
         public const string ZTestProp = "_M_ZTest";
         public const string OverlayDepthKeyword = "_MTOONXT_OVERLAY_DEPTH";
+        public const string OutlineOverlayDepthKeyword = "_MTOONXT_OUTLINE_OVERLAY_DEPTH";
+
+        public const string PassMtoonForward = "MToonForward";
+        public const string PassUniversalForwardOverlay = "UniversalForwardOverlay";
+        public const string PassForwardBase = "FORWARD_BASE";
+        public const string PassForwardBaseOverlay = "FORWARD_BASE_OVERLAY";
+        public const string PassForwardAdd = "FORWARD_ADD";
+        public const string PassForwardAddOverlay = "FORWARD_ADD_OVERLAY";
+        public const string PassMtoonOutlineMain = "MToonOutlineMain";
+        public const string PassMtoonOutlineOverlay = "MToonOutlineOverlay";
+        public const string PassForwardBaseOutline = "FORWARD_BASE_OUTLINE";
+        public const string PassForwardBaseOutlineOverlay = "FORWARD_BASE_OUTLINE_OVERLAY";
         public const string StencilPropEnabled = "_M_StencilEnabled";
         public const string StencilPropRef = "_M_StencilRef";
         public const string StencilPropReadMask = "_M_StencilReadMask";

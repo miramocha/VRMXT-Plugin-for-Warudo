@@ -136,18 +136,26 @@ namespace UniVRMXT.Mtoonxt
                     ApplyStencil(material, outlineStencil, outline: true, gpuBase);
                     ApplyZTest(material, xt.ZTest);
                     ApplyZWrite(material, xt.ZWrite);
-                    if (UsesOverlayDepth(xt))
+                    var bodyOverlay = UsesOverlayDepth(xt);
+                    var outlineOverlay = UsesOutlineOverlayDepth(xt);
+                    if (bodyOverlay)
                     {
                         ApplyZTest(material, "always");
                         ApplyZWrite(material, false);
                     }
 
-                    ApplyStencilDrawOrder(material, bodyStencil, UsesOverlayDepth(xt));
+                    ApplyStencilDrawOrder(material, bodyStencil, bodyOverlay);
                     SetKeyword(
                         material,
                         VrmcMaterialsMtoonxt.OverlayDepthKeyword,
-                        UsesOverlayDepth(xt)
+                        bodyOverlay
                     );
+                    SetKeyword(
+                        material,
+                        VrmcMaterialsMtoonxt.OutlineOverlayDepthKeyword,
+                        outlineOverlay
+                    );
+                    ApplyOverlayColorPasses(material, bodyOverlay, outlineOverlay);
                     swappedAny = true;
                 }
 
@@ -441,6 +449,8 @@ namespace UniVRMXT.Mtoonxt
 
             TrySetFloat(material, "_M_CullMode", doubleSided ? 0f : 2f);
             SetKeyword(material, VrmcMaterialsMtoonxt.OverlayDepthKeyword, false);
+            SetKeyword(material, VrmcMaterialsMtoonxt.OutlineOverlayDepthKeyword, false);
+            ApplyOverlayColorPasses(material, false, false);
             if (material.HasProperty("_RenderQueueOffset"))
             {
                 material.SetInt("_RenderQueueOffset", renderQueueOffset);
@@ -489,33 +499,91 @@ namespace UniVRMXT.Mtoonxt
             SetKeyword(material, "_MTOON_OUTLINE_SCREEN", outlineMode == 2);
         }
 
+        /// <summary>
+        /// Body <c>insideOverlay</c> only. Outline overlay must not force body Always /
+        /// overlay keyword (URP/BIRP share one material).
+        /// </summary>
         public static bool UsesOverlayDepth(VrmcMaterialsMtoonxtExtension xt)
+        {
+            return IsInsideOverlay(xt != null ? xt.Stencil : null);
+        }
+
+        public static bool UsesOutlineOverlayDepth(VrmcMaterialsMtoonxtExtension xt)
         {
             if (xt == null)
             {
                 return false;
             }
 
-            if (IsInsideOverlay(xt.Stencil))
-            {
-                return true;
-            }
-
-            if (xt.OutlineStencil == null)
-            {
-                return false;
-            }
-
-            if (IsInsideOverlay(xt.OutlineStencil))
-            {
-                return true;
-            }
-
-            return string.Equals(
+            if (
+                xt.OutlineStencil == null
+                || string.Equals(
                     xt.OutlineStencil.Op,
                     VrmcMaterialsMtoonxtStencil.OpSame,
                     StringComparison.Ordinal
-                ) && IsInsideOverlay(xt.Stencil);
+                )
+            )
+            {
+                return UsesOverlayDepth(xt);
+            }
+
+            return IsInsideOverlay(xt.OutlineStencil);
+        }
+
+        public static void ApplyOverlayColorPasses(
+            Material material,
+            bool bodyOverlay,
+            bool outlineOverlay
+        )
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            SetShaderPassEnabled(material, VrmcMaterialsMtoonxt.PassMtoonForward, !bodyOverlay);
+            SetShaderPassEnabled(
+                material,
+                VrmcMaterialsMtoonxt.PassUniversalForwardOverlay,
+                bodyOverlay
+            );
+            SetShaderPassEnabled(material, VrmcMaterialsMtoonxt.PassForwardBase, !bodyOverlay);
+            SetShaderPassEnabled(
+                material,
+                VrmcMaterialsMtoonxt.PassForwardBaseOverlay,
+                bodyOverlay
+            );
+            SetShaderPassEnabled(material, VrmcMaterialsMtoonxt.PassForwardAdd, !bodyOverlay);
+            SetShaderPassEnabled(
+                material,
+                VrmcMaterialsMtoonxt.PassForwardAddOverlay,
+                bodyOverlay
+            );
+            SetShaderPassEnabled(
+                material,
+                VrmcMaterialsMtoonxt.PassMtoonOutlineMain,
+                !outlineOverlay
+            );
+            SetShaderPassEnabled(
+                material,
+                VrmcMaterialsMtoonxt.PassMtoonOutlineOverlay,
+                outlineOverlay
+            );
+            SetShaderPassEnabled(
+                material,
+                VrmcMaterialsMtoonxt.PassForwardBaseOutline,
+                !outlineOverlay
+            );
+            SetShaderPassEnabled(
+                material,
+                VrmcMaterialsMtoonxt.PassForwardBaseOutlineOverlay,
+                outlineOverlay
+            );
+        }
+
+        private static void SetShaderPassEnabled(Material material, string passName, bool enabled)
+        {
+            material.SetShaderPassEnabled(passName, enabled);
         }
 
         private static bool IsInsideOverlay(VrmcMaterialsMtoonxtStencil stencil)
