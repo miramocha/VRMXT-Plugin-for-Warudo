@@ -15,6 +15,9 @@ namespace UniVRMXT.Mtoonxt
 
         [InspectorName("Clip outside")]
         ClipOutside = 3,
+
+        [InspectorName("Clip inside overlay")]
+        ClipInsideOverlay = 4,
     }
 
     public enum VrmcMtoonxtOutlineStencilOp
@@ -30,6 +33,9 @@ namespace UniVRMXT.Mtoonxt
 
         [InspectorName("Clip outside")]
         ClipOutside = 4,
+
+        [InspectorName("Clip inside overlay")]
+        ClipInsideOverlay = 5,
     }
 
     /// <summary>
