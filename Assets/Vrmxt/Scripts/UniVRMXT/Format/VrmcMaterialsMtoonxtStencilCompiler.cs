@@ -14,7 +14,8 @@ namespace UniVRMXT.Format
         public static void Compile(
             IReadOnlyList<VrmcMaterialsMtoonxtExtension> extrasByIndex,
             out VrmcMaterialsMtoonxtStencil[] body,
-            out VrmcMaterialsMtoonxtStencil[] outline)
+            out VrmcMaterialsMtoonxtStencil[] outline
+        )
         {
             var count = extrasByIndex != null ? extrasByIndex.Count : 0;
             body = new VrmcMaterialsMtoonxtStencil[count];
@@ -29,14 +30,38 @@ namespace UniVRMXT.Format
 
             for (var i = 0; i < count; i++)
             {
-                CollectReaderSet(extrasByIndex, count, i, GetSource(extrasByIndex[i], body: true), sets, writerToKeys);
-                CollectReaderSet(extrasByIndex, count, i, GetSource(extrasByIndex[i], body: false), sets, writerToKeys);
+                CollectReaderSet(
+                    extrasByIndex,
+                    count,
+                    i,
+                    GetSource(extrasByIndex[i], body: true),
+                    sets,
+                    writerToKeys
+                );
+                CollectReaderSet(
+                    extrasByIndex,
+                    count,
+                    i,
+                    GetSource(extrasByIndex[i], body: false),
+                    sets,
+                    writerToKeys
+                );
             }
 
             for (var i = 0; i < count; i++)
             {
-                CollectUnlistedWrite(GetSource(extrasByIndex[i], body: true), i, sets, writerToKeys);
-                CollectUnlistedWrite(GetSource(extrasByIndex[i], body: false), i, sets, writerToKeys);
+                CollectUnlistedWrite(
+                    GetSource(extrasByIndex[i], body: true),
+                    i,
+                    sets,
+                    writerToKeys
+                );
+                CollectUnlistedWrite(
+                    GetSource(extrasByIndex[i], body: false),
+                    i,
+                    sets,
+                    writerToKeys
+                );
             }
 
             var invalidKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -78,7 +103,8 @@ namespace UniVRMXT.Format
                     writerToKeys,
                     invalidKeys,
                     refByKey,
-                    body);
+                    body
+                );
             }
 
             for (var i = 0; i < count; i++)
@@ -92,7 +118,8 @@ namespace UniVRMXT.Format
                     writerToKeys,
                     invalidKeys,
                     refByKey,
-                    body);
+                    body
+                );
             }
         }
 
@@ -102,20 +129,40 @@ namespace UniVRMXT.Format
             int readerIndex,
             VrmcMaterialsMtoonxtStencil stencil,
             Dictionary<string, int[]> sets,
-            Dictionary<int, HashSet<string>> writerToKeys)
+            Dictionary<int, HashSet<string>> writerToKeys
+        )
         {
             if (stencil == null || !stencil.HasOp)
             {
                 return;
             }
 
-            if (string.Equals(stencil.Op, VrmcMaterialsMtoonxtStencil.OpSame, StringComparison.Ordinal) ||
-                string.Equals(stencil.Op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
+            if (
+                string.Equals(
+                    stencil.Op,
+                    VrmcMaterialsMtoonxtStencil.OpSame,
+                    StringComparison.Ordinal
+                )
+                || string.Equals(
+                    stencil.Op,
+                    VrmcMaterialsMtoonxtStencil.OpWrite,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 return;
             }
 
-            if (!TryNormalizeReaderSet(stencil, readerIndex, count, extrasByIndex, out var sorted, out var key))
+            if (
+                !TryNormalizeReaderSet(
+                    stencil,
+                    readerIndex,
+                    count,
+                    extrasByIndex,
+                    out var sorted,
+                    out var key
+                )
+            )
             {
                 return;
             }
@@ -128,10 +175,17 @@ namespace UniVRMXT.Format
             VrmcMaterialsMtoonxtStencil stencil,
             int index,
             Dictionary<string, int[]> sets,
-            Dictionary<int, HashSet<string>> writerToKeys)
+            Dictionary<int, HashSet<string>> writerToKeys
+        )
         {
-            if (stencil == null ||
-                !string.Equals(stencil.Op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
+            if (
+                stencil == null
+                || !string.Equals(
+                    stencil.Op,
+                    VrmcMaterialsMtoonxtStencil.OpWrite,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 return;
             }
@@ -156,14 +210,21 @@ namespace UniVRMXT.Format
             Dictionary<int, HashSet<string>> writerToKeys,
             HashSet<string> invalidKeys,
             Dictionary<string, int> refByKey,
-            VrmcMaterialsMtoonxtStencil[] bodyOut)
+            VrmcMaterialsMtoonxtStencil[] bodyOut
+        )
         {
             if (source == null || !source.HasOp)
             {
                 return null;
             }
 
-            if (string.Equals(source.Op, VrmcMaterialsMtoonxtStencil.OpSame, StringComparison.Ordinal))
+            if (
+                string.Equals(
+                    source.Op,
+                    VrmcMaterialsMtoonxtStencil.OpSame,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 if (isBody)
                 {
@@ -173,7 +234,13 @@ namespace UniVRMXT.Format
                 return bodyOut[index];
             }
 
-            if (string.Equals(source.Op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
+            if (
+                string.Equals(
+                    source.Op,
+                    VrmcMaterialsMtoonxtStencil.OpWrite,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 if (!writerToKeys.TryGetValue(index, out var keys) || keys.Count != 1)
                 {
@@ -186,7 +253,11 @@ namespace UniVRMXT.Format
                     onlyKey = key;
                 }
 
-                if (onlyKey == null || invalidKeys.Contains(onlyKey) || !refByKey.TryGetValue(onlyKey, out var writeRef))
+                if (
+                    onlyKey == null
+                    || invalidKeys.Contains(onlyKey)
+                    || !refByKey.TryGetValue(onlyKey, out var writeRef)
+                )
                 {
                     return null;
                 }
@@ -194,25 +265,45 @@ namespace UniVRMXT.Format
                 return VrmcMaterialsMtoonxtStencil.Compiled(writeRef, "always", "replace");
             }
 
-            if (!TryNormalizeReaderSet(
+            if (
+                !TryNormalizeReaderSet(
                     source,
                     index,
                     count,
                     extrasByIndex,
                     out _,
-                    out var readerKey) ||
-                invalidKeys.Contains(readerKey) ||
-                !refByKey.TryGetValue(readerKey, out var clipRef))
+                    out var readerKey
+                )
+                || invalidKeys.Contains(readerKey)
+                || !refByKey.TryGetValue(readerKey, out var clipRef)
+            )
             {
                 return null;
             }
 
-            if (string.Equals(source.Op, VrmcMaterialsMtoonxtStencil.OpInside, StringComparison.Ordinal))
+            if (
+                string.Equals(
+                    source.Op,
+                    VrmcMaterialsMtoonxtStencil.OpInside,
+                    StringComparison.Ordinal
+                )
+                || string.Equals(
+                    source.Op,
+                    VrmcMaterialsMtoonxtStencil.OpInsideOverlay,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 return VrmcMaterialsMtoonxtStencil.Compiled(clipRef, "equal", "keep");
             }
 
-            if (string.Equals(source.Op, VrmcMaterialsMtoonxtStencil.OpOutside, StringComparison.Ordinal))
+            if (
+                string.Equals(
+                    source.Op,
+                    VrmcMaterialsMtoonxtStencil.OpOutside,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 return VrmcMaterialsMtoonxtStencil.Compiled(clipRef, "notEqual", "keep");
             }
@@ -226,7 +317,8 @@ namespace UniVRMXT.Format
             int materialCount,
             IReadOnlyList<VrmcMaterialsMtoonxtExtension> extrasByIndex,
             out int[] sorted,
-            out string key)
+            out string key
+        )
         {
             sorted = null;
             key = null;
@@ -245,8 +337,14 @@ namespace UniVRMXT.Format
                 }
 
                 var writer = GetBodyWrite(extrasByIndex[writerIndex]);
-                if (writer == null ||
-                    !string.Equals(writer.Op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
+                if (
+                    writer == null
+                    || !string.Equals(
+                        writer.Op,
+                        VrmcMaterialsMtoonxtStencil.OpWrite,
+                        StringComparison.Ordinal
+                    )
+                )
                 {
                     return false;
                 }
@@ -273,7 +371,8 @@ namespace UniVRMXT.Format
         private static void RegisterWriters(
             Dictionary<int, HashSet<string>> writerToKeys,
             int[] sorted,
-            string key)
+            string key
+        )
         {
             for (var i = 0; i < sorted.Length; i++)
             {
@@ -306,7 +405,8 @@ namespace UniVRMXT.Format
 
         private static VrmcMaterialsMtoonxtStencil GetSource(
             VrmcMaterialsMtoonxtExtension extra,
-            bool body)
+            bool body
+        )
         {
             if (extra == null)
             {

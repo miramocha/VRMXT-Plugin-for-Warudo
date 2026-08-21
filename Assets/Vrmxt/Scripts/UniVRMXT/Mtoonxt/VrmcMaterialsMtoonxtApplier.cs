@@ -135,8 +135,19 @@ namespace UniVRMXT.Mtoonxt
                     ApplyStencil(material, bodyStencil, outline: false, gpuBase);
                     ApplyStencil(material, outlineStencil, outline: true, gpuBase);
                     ApplyZTest(material, xt.ZTest);
-                    ApplyStencilDrawOrder(material, bodyStencil);
                     ApplyZWrite(material, xt.ZWrite);
+                    if (UsesOverlayDepth(xt))
+                    {
+                        ApplyZTest(material, "always");
+                        ApplyZWrite(material, false);
+                    }
+
+                    ApplyStencilDrawOrder(material, bodyStencil, UsesOverlayDepth(xt));
+                    SetKeyword(
+                        material,
+                        VrmcMaterialsMtoonxt.OverlayDepthKeyword,
+                        UsesOverlayDepth(xt)
+                    );
                     swappedAny = true;
                 }
 
@@ -429,6 +440,7 @@ namespace UniVRMXT.Mtoonxt
             }
 
             TrySetFloat(material, "_M_CullMode", doubleSided ? 0f : 2f);
+            SetKeyword(material, VrmcMaterialsMtoonxt.OverlayDepthKeyword, false);
             if (material.HasProperty("_RenderQueueOffset"))
             {
                 material.SetInt("_RenderQueueOffset", renderQueueOffset);
@@ -477,6 +489,45 @@ namespace UniVRMXT.Mtoonxt
             SetKeyword(material, "_MTOON_OUTLINE_SCREEN", outlineMode == 2);
         }
 
+        public static bool UsesOverlayDepth(VrmcMaterialsMtoonxtExtension xt)
+        {
+            if (xt == null)
+            {
+                return false;
+            }
+
+            if (IsInsideOverlay(xt.Stencil))
+            {
+                return true;
+            }
+
+            if (xt.OutlineStencil == null)
+            {
+                return false;
+            }
+
+            if (IsInsideOverlay(xt.OutlineStencil))
+            {
+                return true;
+            }
+
+            return string.Equals(
+                    xt.OutlineStencil.Op,
+                    VrmcMaterialsMtoonxtStencil.OpSame,
+                    StringComparison.Ordinal
+                ) && IsInsideOverlay(xt.Stencil);
+        }
+
+        private static bool IsInsideOverlay(VrmcMaterialsMtoonxtStencil stencil)
+        {
+            return stencil != null
+                && string.Equals(
+                    stencil.Op,
+                    VrmcMaterialsMtoonxtStencil.OpInsideOverlay,
+                    StringComparison.Ordinal
+                );
+        }
+
         public static void ApplyZTest(Material material, string zTest)
         {
             if (material == null)
@@ -503,11 +554,14 @@ namespace UniVRMXT.Mtoonxt
         /// Cutout face meshes often list iris before sclera. Shift body <c>write</c>
         /// two Unity queue slots and <c>inside</c> one slot before the mapped queue so
         /// the stamp lands, then iris clips, then skin/eyelids at the mapped slot can
-        /// cover leftover iris-card pixels. <c>outside</c> (hair punch) stays mapped.
+        /// cover leftover iris-card pixels. <c>insideOverlay</c> one slot after mapped
+        /// so it paints after occluders and does not punch their Z.
+        /// <c>outside</c> (hair punch) stays mapped.
         /// </summary>
         public static void ApplyStencilDrawOrder(
             Material material,
-            VrmcMaterialsMtoonxtStencil compiledBody
+            VrmcMaterialsMtoonxtStencil compiledBody,
+            bool overlay = false
         )
         {
             if (material == null || compiledBody == null || !compiledBody.Enabled)
@@ -516,7 +570,11 @@ namespace UniVRMXT.Mtoonxt
             }
 
             var delta = 0;
-            if (string.Equals(compiledBody.Pass, "replace", StringComparison.Ordinal))
+            if (overlay)
+            {
+                delta = 1;
+            }
+            else if (string.Equals(compiledBody.Pass, "replace", StringComparison.Ordinal))
             {
                 delta = -2;
             }

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
+using UnityEngine;
 using UniVRMXT.Format;
 using UniVRMXT.MaterialsOverride;
-using UnityEngine;
 
 namespace UniVRMXT.Mtoonxt
 {
@@ -13,7 +13,8 @@ namespace UniVRMXT.Mtoonxt
     {
         public static void PopulateFromExtensionJson(
             GameObject root,
-            VrmcMaterialsMtoonxtInstance store)
+            VrmcMaterialsMtoonxtInstance store
+        )
         {
             if (store == null)
             {
@@ -29,7 +30,8 @@ namespace UniVRMXT.Mtoonxt
         public static void PopulateFromExtensionJson(
             GameObject root,
             VrmcMaterialsMtoonxtInstance store,
-            VrmcMaterialsMtoonxtPair pair)
+            VrmcMaterialsMtoonxtPair pair
+        )
         {
             if (pair == null || string.IsNullOrEmpty(pair.ExtensionJson))
             {
@@ -44,13 +46,17 @@ namespace UniVRMXT.Mtoonxt
             pair.BodyOp = BodyOpFromStencil(xt.Stencil);
             pair.OutlineOp = OutlineOpFromStencil(xt.OutlineStencil);
             ReplaceMaterials(pair.StencilTargets, ToMaterialList(root, store, xt.Stencil));
-            ReplaceMaterials(pair.OutlineStencilTargets, ToMaterialList(root, store, xt.OutlineStencil));
+            ReplaceMaterials(
+                pair.OutlineStencilTargets,
+                ToMaterialList(root, store, xt.OutlineStencil)
+            );
         }
 
         public static VrmcMaterialsMtoonxtExtension ToExtension(
             GameObject root,
             VrmcMaterialsMtoonxtInstance store,
-            VrmcMaterialsMtoonxtPair pair)
+            VrmcMaterialsMtoonxtPair pair
+        )
         {
             if (pair == null)
             {
@@ -59,9 +65,11 @@ namespace UniVRMXT.Mtoonxt
 
             string zTest = null;
             bool? zWrite = null;
-            if (!string.IsNullOrEmpty(pair.ExtensionJson) &&
-                VrmcMaterialsMtoonxt.TryParse(pair.ExtensionJson, out var imported) &&
-                imported != null)
+            if (
+                !string.IsNullOrEmpty(pair.ExtensionJson)
+                && VrmcMaterialsMtoonxt.TryParse(pair.ExtensionJson, out var imported)
+                && imported != null
+            )
             {
                 zTest = imported.ZTest;
                 zWrite = imported.ZWrite;
@@ -71,23 +79,45 @@ namespace UniVRMXT.Mtoonxt
                 BodyToStencil(root, store, pair.BodyOp, pair.StencilTargets),
                 OutlineToStencil(root, store, pair.OutlineOp, pair.OutlineStencilTargets),
                 zTest,
-                zWrite);
+                zWrite
+            );
         }
 
         private static VrmcMaterialsMtoonxtStencil BodyToStencil(
             GameObject root,
             VrmcMaterialsMtoonxtInstance store,
             VrmcMtoonxtBodyStencilOp op,
-            List<Material> targets)
+            List<Material> targets
+        )
         {
             switch (op)
             {
                 case VrmcMtoonxtBodyStencilOp.Write:
-                    return VrmcMaterialsMtoonxtStencil.FromOp(VrmcMaterialsMtoonxtStencil.OpWrite, null);
+                    return VrmcMaterialsMtoonxtStencil.FromOp(
+                        VrmcMaterialsMtoonxtStencil.OpWrite,
+                        null
+                    );
                 case VrmcMtoonxtBodyStencilOp.ClipInside:
-                    return ClipToStencil(VrmcMaterialsMtoonxtStencil.OpInside, root, store, targets);
+                    return ClipToStencil(
+                        VrmcMaterialsMtoonxtStencil.OpInside,
+                        root,
+                        store,
+                        targets
+                    );
+                case VrmcMtoonxtBodyStencilOp.ClipInsideOverlay:
+                    return ClipToStencil(
+                        VrmcMaterialsMtoonxtStencil.OpInsideOverlay,
+                        root,
+                        store,
+                        targets
+                    );
                 case VrmcMtoonxtBodyStencilOp.ClipOutside:
-                    return ClipToStencil(VrmcMaterialsMtoonxtStencil.OpOutside, root, store, targets);
+                    return ClipToStencil(
+                        VrmcMaterialsMtoonxtStencil.OpOutside,
+                        root,
+                        store,
+                        targets
+                    );
                 default:
                     return null;
             }
@@ -97,18 +127,42 @@ namespace UniVRMXT.Mtoonxt
             GameObject root,
             VrmcMaterialsMtoonxtInstance store,
             VrmcMtoonxtOutlineStencilOp op,
-            List<Material> targets)
+            List<Material> targets
+        )
         {
             switch (op)
             {
                 case VrmcMtoonxtOutlineStencilOp.Same:
-                    return VrmcMaterialsMtoonxtStencil.FromOp(VrmcMaterialsMtoonxtStencil.OpSame, null);
+                    return VrmcMaterialsMtoonxtStencil.FromOp(
+                        VrmcMaterialsMtoonxtStencil.OpSame,
+                        null
+                    );
                 case VrmcMtoonxtOutlineStencilOp.Write:
-                    return VrmcMaterialsMtoonxtStencil.FromOp(VrmcMaterialsMtoonxtStencil.OpWrite, null);
+                    return VrmcMaterialsMtoonxtStencil.FromOp(
+                        VrmcMaterialsMtoonxtStencil.OpWrite,
+                        null
+                    );
                 case VrmcMtoonxtOutlineStencilOp.ClipInside:
-                    return ClipToStencil(VrmcMaterialsMtoonxtStencil.OpInside, root, store, targets);
+                    return ClipToStencil(
+                        VrmcMaterialsMtoonxtStencil.OpInside,
+                        root,
+                        store,
+                        targets
+                    );
+                case VrmcMtoonxtOutlineStencilOp.ClipInsideOverlay:
+                    return ClipToStencil(
+                        VrmcMaterialsMtoonxtStencil.OpInsideOverlay,
+                        root,
+                        store,
+                        targets
+                    );
                 case VrmcMtoonxtOutlineStencilOp.ClipOutside:
-                    return ClipToStencil(VrmcMaterialsMtoonxtStencil.OpOutside, root, store, targets);
+                    return ClipToStencil(
+                        VrmcMaterialsMtoonxtStencil.OpOutside,
+                        root,
+                        store,
+                        targets
+                    );
                 default:
                     return null;
             }
@@ -118,7 +172,8 @@ namespace UniVRMXT.Mtoonxt
             string op,
             GameObject root,
             VrmcMaterialsMtoonxtInstance store,
-            List<Material> targets)
+            List<Material> targets
+        )
         {
             var indices = MaterialsToIndices(root, store, targets);
             if (indices.Count == 0)
@@ -129,7 +184,9 @@ namespace UniVRMXT.Mtoonxt
             return VrmcMaterialsMtoonxtStencil.FromOp(op, indices);
         }
 
-        private static VrmcMtoonxtBodyStencilOp BodyOpFromStencil(VrmcMaterialsMtoonxtStencil stencil)
+        private static VrmcMtoonxtBodyStencilOp BodyOpFromStencil(
+            VrmcMaterialsMtoonxtStencil stencil
+        )
         {
             if (stencil == null || !stencil.HasOp)
             {
@@ -146,6 +203,11 @@ namespace UniVRMXT.Mtoonxt
                 return VrmcMtoonxtBodyStencilOp.ClipInside;
             }
 
+            if (stencil.Op == VrmcMaterialsMtoonxtStencil.OpInsideOverlay)
+            {
+                return VrmcMtoonxtBodyStencilOp.ClipInsideOverlay;
+            }
+
             if (stencil.Op == VrmcMaterialsMtoonxtStencil.OpOutside)
             {
                 return VrmcMtoonxtBodyStencilOp.ClipOutside;
@@ -154,7 +216,9 @@ namespace UniVRMXT.Mtoonxt
             return VrmcMtoonxtBodyStencilOp.Off;
         }
 
-        private static VrmcMtoonxtOutlineStencilOp OutlineOpFromStencil(VrmcMaterialsMtoonxtStencil stencil)
+        private static VrmcMtoonxtOutlineStencilOp OutlineOpFromStencil(
+            VrmcMaterialsMtoonxtStencil stencil
+        )
         {
             if (stencil == null || !stencil.HasOp)
             {
@@ -174,6 +238,11 @@ namespace UniVRMXT.Mtoonxt
             if (stencil.Op == VrmcMaterialsMtoonxtStencil.OpInside)
             {
                 return VrmcMtoonxtOutlineStencilOp.ClipInside;
+            }
+
+            if (stencil.Op == VrmcMaterialsMtoonxtStencil.OpInsideOverlay)
+            {
+                return VrmcMtoonxtOutlineStencilOp.ClipInsideOverlay;
             }
 
             if (stencil.Op == VrmcMaterialsMtoonxtStencil.OpOutside)
@@ -206,7 +275,8 @@ namespace UniVRMXT.Mtoonxt
         private static List<Material> ToMaterialList(
             GameObject root,
             VrmcMaterialsMtoonxtInstance store,
-            VrmcMaterialsMtoonxtStencil stencil)
+            VrmcMaterialsMtoonxtStencil stencil
+        )
         {
             var list = new List<Material>();
             if (stencil == null || stencil.Materials == null)
@@ -225,7 +295,8 @@ namespace UniVRMXT.Mtoonxt
         private static List<int> MaterialsToIndices(
             GameObject root,
             VrmcMaterialsMtoonxtInstance store,
-            List<Material> materials)
+            List<Material> materials
+        )
         {
             var indices = new List<int>();
             if (materials == null)
@@ -254,7 +325,8 @@ namespace UniVRMXT.Mtoonxt
         private static Material FindMaterial(
             GameObject root,
             VrmcMaterialsMtoonxtInstance store,
-            int gltfIndex)
+            int gltfIndex
+        )
         {
             if (store == null || root == null)
             {
@@ -269,9 +341,12 @@ namespace UniVRMXT.Mtoonxt
                     continue;
                 }
 
-                foreach (var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
-                             root,
-                             pair.MaterialName))
+                foreach (
+                    var material in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                        root,
+                        pair.MaterialName
+                    )
+                )
                 {
                     if (material != null)
                     {
@@ -286,7 +361,8 @@ namespace UniVRMXT.Mtoonxt
         private static int FindGltfIndex(
             GameObject root,
             VrmcMaterialsMtoonxtInstance store,
-            Material material)
+            Material material
+        )
         {
             if (store == null || material == null)
             {
@@ -301,9 +377,12 @@ namespace UniVRMXT.Mtoonxt
                     continue;
                 }
 
-                foreach (var candidate in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
-                             root,
-                             pair.MaterialName))
+                foreach (
+                    var candidate in VrmxtMaterialsOverrideRuntime.FindMaterialsForStoreKey(
+                        root,
+                        pair.MaterialName
+                    )
+                )
                 {
                     if (candidate == material)
                     {
