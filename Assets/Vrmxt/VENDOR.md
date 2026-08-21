@@ -78,7 +78,7 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Sets identity
 | Item | Value |
 |------|--------|
 | Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/Mtoonxt` + `Runtime/VrmxtInstance` + particle/sample shaders |
-| Date | 2026-08-21 |
+| Date | 2026-08-20 |
 
 ## Included
 

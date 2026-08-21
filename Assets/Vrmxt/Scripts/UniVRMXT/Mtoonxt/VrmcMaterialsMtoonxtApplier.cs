@@ -148,7 +148,6 @@ namespace UniVRMXT.Mtoonxt
                         VrmcMaterialsMtoonxt.OverlayDepthKeyword,
                         UsesOverlayDepth(xt)
                     );
-                    ApplyUtilityDepthPasses(material, SkipsUtilityDepth(bodyStencil));
                     swappedAny = true;
                 }
 
@@ -488,7 +487,6 @@ namespace UniVRMXT.Mtoonxt
                 : 0;
             SetKeyword(material, "_MTOON_OUTLINE_WORLD", outlineMode == 1);
             SetKeyword(material, "_MTOON_OUTLINE_SCREEN", outlineMode == 2);
-            ApplyUtilityDepthPasses(material, skip: false);
         }
 
         public static bool UsesOverlayDepth(VrmcMaterialsMtoonxtExtension xt)
@@ -528,14 +526,6 @@ namespace UniVRMXT.Mtoonxt
                     VrmcMaterialsMtoonxtStencil.OpInsideOverlay,
                     StringComparison.Ordinal
                 );
-        }
-
-        private static bool SkipsUtilityDepth(VrmcMaterialsMtoonxtStencil compiledBody)
-        {
-            return compiledBody != null
-                && compiledBody.Enabled
-                && string.Equals(compiledBody.Comp, "equal", StringComparison.Ordinal)
-                && string.Equals(compiledBody.Pass, "keep", StringComparison.Ordinal);
         }
 
         public static void ApplyZTest(Material material, string zTest)
@@ -608,24 +598,6 @@ namespace UniVRMXT.Mtoonxt
             }
 
             material.renderQueue = (int)next;
-        }
-
-        /// <summary>
-        /// BIRP <c>_CameraDepthTexture</c> (SSAO) comes from ShadowCaster. That target
-        /// has no stencil plane, so Equal clip cannot hide the card. Skip utility depth
-        /// on <c>inside</c> / <c>insideOverlay</c> readers; writers keep the pass.
-        /// </summary>
-        public static void ApplyUtilityDepthPasses(Material material, bool skip)
-        {
-            if (material == null)
-            {
-                return;
-            }
-
-            var enabled = !skip;
-            material.SetShaderPassEnabled("ShadowCaster", enabled);
-            material.SetShaderPassEnabled("DepthOnly", enabled);
-            material.SetShaderPassEnabled("DepthNormals", enabled);
         }
 
         public static void ApplyZWrite(Material material, bool? zWrite)
