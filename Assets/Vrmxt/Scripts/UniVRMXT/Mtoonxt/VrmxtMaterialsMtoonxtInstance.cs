@@ -5,7 +5,7 @@ using UniVRMXT.Format;
 
 namespace UniVRMXT.Mtoonxt
 {
-    public enum VrmcMtoonxtBodyStencilOp
+    public enum VrmxtMtoonxtBodyStencilOp
     {
         Off = 0,
         Write = 1,
@@ -20,7 +20,7 @@ namespace UniVRMXT.Mtoonxt
         ClipInsideOverlay = 4,
     }
 
-    public enum VrmcMtoonxtOutlineStencilOp
+    public enum VrmxtMtoonxtOutlineStencilOp
     {
         Off = 0,
 
@@ -39,23 +39,23 @@ namespace UniVRMXT.Mtoonxt
     }
 
     /// <summary>
-    /// Runtime holder for <c>VRMC_materials_mtoonxt</c> on a loaded avatar root.
+    /// Runtime holder for <c>VRMXT_materials_mtoonxt</c> on a loaded avatar root.
     /// Inspector authors Unity fields; export writes glTF JSON.
     /// </summary>
     [DisallowMultipleComponent]
-    public sealed class VrmcMaterialsMtoonxtInstance : MonoBehaviour
+    public sealed class VrmxtMaterialsMtoonxtInstance : MonoBehaviour
     {
         [SerializeField]
-        private List<VrmcMaterialsMtoonxtPair> pairs = new List<VrmcMaterialsMtoonxtPair>();
+        private List<VrmxtMaterialsMtoonxtPair> pairs = new List<VrmxtMaterialsMtoonxtPair>();
 
-        public IReadOnlyList<VrmcMaterialsMtoonxtPair> Pairs => pairs;
+        public IReadOnlyList<VrmxtMaterialsMtoonxtPair> Pairs => pairs;
 
         private void OnDestroy()
         {
-            VrmcMaterialsMtoonxtStencilRefs.Release(gameObject.GetInstanceID());
+            VrmxtMaterialsMtoonxtStencilRefs.Release(gameObject.GetInstanceID());
         }
 
-        public void SetPairs(IEnumerable<VrmcMaterialsMtoonxtPair> values)
+        public void SetPairs(IEnumerable<VrmxtMaterialsMtoonxtPair> values)
         {
             pairs.Clear();
             if (values == null)
@@ -68,12 +68,12 @@ namespace UniVRMXT.Mtoonxt
     }
 
     [Serializable]
-    public sealed class VrmcMaterialsMtoonxtPair
+    public sealed class VrmxtMaterialsMtoonxtPair
     {
         public string MaterialName;
         public int GltfMaterialIndex = -1;
-        public VrmcMtoonxtBodyStencilOp BodyOp;
-        public VrmcMtoonxtOutlineStencilOp OutlineOp;
+        public VrmxtMtoonxtBodyStencilOp BodyOp;
+        public VrmxtMtoonxtOutlineStencilOp OutlineOp;
         public List<Material> StencilTargets = new List<Material>();
         public List<Material> OutlineStencilTargets = new List<Material>();
 
@@ -82,9 +82,9 @@ namespace UniVRMXT.Mtoonxt
         /// </summary>
         public string ExtensionJson;
 
-        public VrmcMaterialsMtoonxtPair() { }
+        public VrmxtMaterialsMtoonxtPair() { }
 
-        public VrmcMaterialsMtoonxtPair(
+        public VrmxtMaterialsMtoonxtPair(
             string materialName,
             string extensionJson,
             int gltfMaterialIndex

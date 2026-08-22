@@ -2,7 +2,7 @@
 
 Warudo **consumer** plugin: attaches VRMXT particle VFX (`VRMXT_sprite_particle`),
 materials override (`VRMXT_materials_override`), and MToonXT stencil
-(`VRMC_materials_mtoonxt`) onto Character assets after load.
+(`VRMXT_materials_mtoonxt`) onto Character assets after load.
 
 Open the **VRMXT** plugin settings in Warudo and use **Enable VRMXT** to turn attach
 on or off (saved across scenes). Reload the scene after toggling to refresh material

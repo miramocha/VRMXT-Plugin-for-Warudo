@@ -11,10 +11,10 @@ namespace UniVRMXT.Mtoonxt
     /// Swap stock MToon to the pipeline MToonXT shader and write stencil extras.
     /// Skips when <c>VRMXT_materials_override</c> would apply (spec rule 14).
     /// </summary>
-    public static class VrmcMaterialsMtoonxtApplier
+    public static class VrmxtMaterialsMtoonxtApplier
     {
-        private static readonly VrmcMaterialsMtoonxtStencil StencilOff =
-            new VrmcMaterialsMtoonxtStencil(false, 0, 255, 255, "always", "keep", "keep", "keep");
+        private static readonly VrmxtMaterialsMtoonxtStencil StencilOff =
+            new VrmxtMaterialsMtoonxtStencil(false, 0, 255, 255, "always", "keep", "keep", "keep");
 
         public static int Apply(
             GameObject root,
@@ -22,13 +22,13 @@ namespace UniVRMXT.Mtoonxt
             Func<string, Shader> resolveShader = null
         )
         {
-            VrmcMaterialsMtoonxtRuntime.TryAttachFromGltfJson(root, gltfJson, out var store);
+            VrmxtMaterialsMtoonxtRuntime.TryAttachFromGltfJson(root, gltfJson, out var store);
             return Apply(root, store, gltfJson, resolveShader);
         }
 
         public static int Apply(
             GameObject root,
-            VrmcMaterialsMtoonxtInstance store,
+            VrmxtMaterialsMtoonxtInstance store,
             string gltfJson,
             Func<string, Shader> resolveShader = null
         )
@@ -67,7 +67,7 @@ namespace UniVRMXT.Mtoonxt
             }
 
             var extrasByIndex = BuildExtrasByIndex(gltfRoot, store, root);
-            VrmcMaterialsMtoonxtStencilCompiler.Compile(
+            VrmxtMaterialsMtoonxtStencilCompiler.Compile(
                 extrasByIndex,
                 out var compiledBody,
                 out var compiledOutline
@@ -84,7 +84,7 @@ namespace UniVRMXT.Mtoonxt
                     continue;
                 }
 
-                var xt = VrmcMaterialsMtoonxtAuthoring.ToExtension(root, store, pair);
+                var xt = VrmxtMaterialsMtoonxtAuthoring.ToExtension(root, store, pair);
                 if (xt == null)
                 {
                     continue;
@@ -106,8 +106,8 @@ namespace UniVRMXT.Mtoonxt
                 }
 
                 var gltfIndex = pair.GltfMaterialIndex;
-                VrmcMaterialsMtoonxtStencil bodyStencil = null;
-                VrmcMaterialsMtoonxtStencil outlineStencil = null;
+                VrmxtMaterialsMtoonxtStencil bodyStencil = null;
+                VrmxtMaterialsMtoonxtStencil outlineStencil = null;
                 if (gltfIndex >= 0 && gltfIndex < compiledBody.Length)
                 {
                     bodyStencil = compiledBody[gltfIndex];
@@ -147,12 +147,12 @@ namespace UniVRMXT.Mtoonxt
                     ApplyStencilDrawOrder(material, bodyStencil, bodyOverlay);
                     SetKeyword(
                         material,
-                        VrmcMaterialsMtoonxt.OverlayDepthKeyword,
+                        VrmxtMaterialsMtoonxt.OverlayDepthKeyword,
                         bodyOverlay
                     );
                     SetKeyword(
                         material,
-                        VrmcMaterialsMtoonxt.OutlineOverlayDepthKeyword,
+                        VrmxtMaterialsMtoonxt.OutlineOverlayDepthKeyword,
                         outlineOverlay
                     );
                     ApplyOverlayColorPasses(material, bodyOverlay, outlineOverlay);
@@ -170,8 +170,8 @@ namespace UniVRMXT.Mtoonxt
 
         private static int AcquireGpuBase(
             GameObject root,
-            VrmcMaterialsMtoonxtStencil[] compiledBody,
-            VrmcMaterialsMtoonxtStencil[] compiledOutline
+            VrmxtMaterialsMtoonxtStencil[] compiledBody,
+            VrmxtMaterialsMtoonxtStencil[] compiledOutline
         )
         {
             if (root == null)
@@ -182,16 +182,16 @@ namespace UniVRMXT.Mtoonxt
             var span = MaxEnabledRef(compiledBody, compiledOutline);
             if (span < 1)
             {
-                VrmcMaterialsMtoonxtStencilRefs.Release(root.GetInstanceID());
+                VrmxtMaterialsMtoonxtStencilRefs.Release(root.GetInstanceID());
                 return 0;
             }
 
-            return VrmcMaterialsMtoonxtStencilRefs.Acquire(root.GetInstanceID(), span);
+            return VrmxtMaterialsMtoonxtStencilRefs.Acquire(root.GetInstanceID(), span);
         }
 
         private static int MaxEnabledRef(
-            VrmcMaterialsMtoonxtStencil[] compiledBody,
-            VrmcMaterialsMtoonxtStencil[] compiledOutline
+            VrmxtMaterialsMtoonxtStencil[] compiledBody,
+            VrmxtMaterialsMtoonxtStencil[] compiledOutline
         )
         {
             var max = 0;
@@ -200,7 +200,7 @@ namespace UniVRMXT.Mtoonxt
             return max;
         }
 
-        private static void MaxEnabledRef(VrmcMaterialsMtoonxtStencil[] compiled, ref int max)
+        private static void MaxEnabledRef(VrmxtMaterialsMtoonxtStencil[] compiled, ref int max)
         {
             if (compiled == null)
             {
@@ -219,15 +219,15 @@ namespace UniVRMXT.Mtoonxt
             }
         }
 
-        private static VrmcMaterialsMtoonxtExtension[] BuildExtrasByIndex(
+        private static VrmxtMaterialsMtoonxtExtension[] BuildExtrasByIndex(
             JObject gltfRoot,
-            VrmcMaterialsMtoonxtInstance store,
+            VrmxtMaterialsMtoonxtInstance store,
             GameObject root
         )
         {
             var materials = gltfRoot["materials"] as JArray;
             var count = materials != null ? materials.Count : 0;
-            var extras = new VrmcMaterialsMtoonxtExtension[count];
+            var extras = new VrmxtMaterialsMtoonxtExtension[count];
             var pairs = store.Pairs;
             for (var i = 0; i < pairs.Count; i++)
             {
@@ -237,7 +237,7 @@ namespace UniVRMXT.Mtoonxt
                     continue;
                 }
 
-                var xt = VrmcMaterialsMtoonxtAuthoring.ToExtension(root, store, pair);
+                var xt = VrmxtMaterialsMtoonxtAuthoring.ToExtension(root, store, pair);
                 if (xt != null)
                 {
                     extras[pair.GltfMaterialIndex] = xt;
@@ -294,7 +294,7 @@ namespace UniVRMXT.Mtoonxt
             if (
                 extensions == null
                 || !extensions.TryGetValue(
-                    VrmcMaterialsMtoonxt.SiblingMtoonExtensionName,
+                    VrmxtMaterialsMtoonxt.SiblingMtoonExtensionName,
                     StringComparison.Ordinal,
                     out var mtoonToken
                 )
@@ -368,9 +368,9 @@ namespace UniVRMXT.Mtoonxt
             switch (pipeline)
             {
                 case RenderPipelineVariant.Urp:
-                    return VrmcMaterialsMtoonxt.UrpShaderName;
+                    return VrmxtMaterialsMtoonxt.UrpShaderName;
                 case RenderPipelineVariant.Builtin:
-                    return VrmcMaterialsMtoonxt.BuiltinShaderName;
+                    return VrmxtMaterialsMtoonxt.BuiltinShaderName;
                 default:
                     return null;
             }
@@ -448,9 +448,9 @@ namespace UniVRMXT.Mtoonxt
             }
 
             TrySetFloat(material, "_M_CullMode", doubleSided ? 0f : 2f);
-            SetKeyword(material, VrmcMaterialsMtoonxt.OverlayDepthKeyword, false);
-            SetKeyword(material, VrmcMaterialsMtoonxt.OutlineOverlayDepthKeyword, false);
-            ApplyOverlayColorPasses(material, false, false);
+            SetKeyword(material, VrmxtMaterialsMtoonxt.OverlayDepthKeyword, false);
+            SetKeyword(material, VrmxtMaterialsMtoonxt.OutlineOverlayDepthKeyword, false);
+            ApplyOverlayColorPasses(material, bodyOverlay: false, outlineOverlay: false);
             if (material.HasProperty("_RenderQueueOffset"))
             {
                 material.SetInt("_RenderQueueOffset", renderQueueOffset);
@@ -503,12 +503,12 @@ namespace UniVRMXT.Mtoonxt
         /// Body <c>insideOverlay</c> only. Outline overlay must not force body Always /
         /// overlay keyword (URP/BIRP share one material).
         /// </summary>
-        public static bool UsesOverlayDepth(VrmcMaterialsMtoonxtExtension xt)
+        public static bool UsesOverlayDepth(VrmxtMaterialsMtoonxtExtension xt)
         {
             return IsInsideOverlay(xt != null ? xt.Stencil : null);
         }
 
-        public static bool UsesOutlineOverlayDepth(VrmcMaterialsMtoonxtExtension xt)
+        public static bool UsesOutlineOverlayDepth(VrmxtMaterialsMtoonxtExtension xt)
         {
             if (xt == null)
             {
@@ -519,7 +519,7 @@ namespace UniVRMXT.Mtoonxt
                 xt.OutlineStencil == null
                 || string.Equals(
                     xt.OutlineStencil.Op,
-                    VrmcMaterialsMtoonxtStencil.OpSame,
+                    VrmxtMaterialsMtoonxtStencil.OpSame,
                     StringComparison.Ordinal
                 )
             )
@@ -541,42 +541,42 @@ namespace UniVRMXT.Mtoonxt
                 return;
             }
 
-            SetShaderPassEnabled(material, VrmcMaterialsMtoonxt.PassMtoonForward, !bodyOverlay);
+            SetShaderPassEnabled(material, VrmxtMaterialsMtoonxt.PassMtoonForward, !bodyOverlay);
             SetShaderPassEnabled(
                 material,
-                VrmcMaterialsMtoonxt.PassUniversalForwardOverlay,
+                VrmxtMaterialsMtoonxt.PassUniversalForwardOverlay,
                 bodyOverlay
             );
-            SetShaderPassEnabled(material, VrmcMaterialsMtoonxt.PassForwardBase, !bodyOverlay);
+            SetShaderPassEnabled(material, VrmxtMaterialsMtoonxt.PassForwardBase, !bodyOverlay);
             SetShaderPassEnabled(
                 material,
-                VrmcMaterialsMtoonxt.PassForwardBaseOverlay,
+                VrmxtMaterialsMtoonxt.PassForwardBaseOverlay,
                 bodyOverlay
             );
-            SetShaderPassEnabled(material, VrmcMaterialsMtoonxt.PassForwardAdd, !bodyOverlay);
+            SetShaderPassEnabled(material, VrmxtMaterialsMtoonxt.PassForwardAdd, !bodyOverlay);
             SetShaderPassEnabled(
                 material,
-                VrmcMaterialsMtoonxt.PassForwardAddOverlay,
+                VrmxtMaterialsMtoonxt.PassForwardAddOverlay,
                 bodyOverlay
             );
             SetShaderPassEnabled(
                 material,
-                VrmcMaterialsMtoonxt.PassMtoonOutlineMain,
+                VrmxtMaterialsMtoonxt.PassMtoonOutlineMain,
                 !outlineOverlay
             );
             SetShaderPassEnabled(
                 material,
-                VrmcMaterialsMtoonxt.PassMtoonOutlineOverlay,
+                VrmxtMaterialsMtoonxt.PassMtoonOutlineOverlay,
                 outlineOverlay
             );
             SetShaderPassEnabled(
                 material,
-                VrmcMaterialsMtoonxt.PassForwardBaseOutline,
+                VrmxtMaterialsMtoonxt.PassForwardBaseOutline,
                 !outlineOverlay
             );
             SetShaderPassEnabled(
                 material,
-                VrmcMaterialsMtoonxt.PassForwardBaseOutlineOverlay,
+                VrmxtMaterialsMtoonxt.PassForwardBaseOutlineOverlay,
                 outlineOverlay
             );
         }
@@ -586,12 +586,12 @@ namespace UniVRMXT.Mtoonxt
             material.SetShaderPassEnabled(passName, enabled);
         }
 
-        private static bool IsInsideOverlay(VrmcMaterialsMtoonxtStencil stencil)
+        private static bool IsInsideOverlay(VrmxtMaterialsMtoonxtStencil stencil)
         {
             return stencil != null
                 && string.Equals(
                     stencil.Op,
-                    VrmcMaterialsMtoonxtStencil.OpInsideOverlay,
+                    VrmxtMaterialsMtoonxtStencil.OpInsideOverlay,
                     StringComparison.Ordinal
                 );
         }
@@ -604,17 +604,17 @@ namespace UniVRMXT.Mtoonxt
             }
 
             if (
-                VrmcMaterialsMtoonxt.TryMapCompareFunction(zTest, out var unityInt)
+                VrmxtMaterialsMtoonxt.TryMapCompareFunction(zTest, out var unityInt)
                 && unityInt != 0
             )
             {
-                TrySetFloat(material, VrmcMaterialsMtoonxt.ZTestProp, unityInt);
+                TrySetFloat(material, VrmxtMaterialsMtoonxt.ZTestProp, unityInt);
                 return;
             }
 
-            if (IsUninitializedComp(material, VrmcMaterialsMtoonxt.ZTestProp))
+            if (IsUninitializedComp(material, VrmxtMaterialsMtoonxt.ZTestProp))
             {
-                TrySetFloat(material, VrmcMaterialsMtoonxt.ZTestProp, DefaultZTestUnityFloat());
+                TrySetFloat(material, VrmxtMaterialsMtoonxt.ZTestProp, DefaultZTestUnityFloat());
             }
         }
 
@@ -628,7 +628,7 @@ namespace UniVRMXT.Mtoonxt
         /// </summary>
         public static void ApplyStencilDrawOrder(
             Material material,
-            VrmcMaterialsMtoonxtStencil compiledBody,
+            VrmxtMaterialsMtoonxtStencil compiledBody,
             bool overlay = false
         )
         {
@@ -689,34 +689,34 @@ namespace UniVRMXT.Mtoonxt
                 return;
             }
 
-            if (!IsEnabled(material, VrmcMaterialsMtoonxt.StencilPropEnabled))
+            if (!IsEnabled(material, VrmxtMaterialsMtoonxt.StencilPropEnabled))
             {
                 ApplyStencil(material, StencilOff, outline: false, 0);
             }
-            else if (IsUninitializedComp(material, VrmcMaterialsMtoonxt.StencilPropComp))
+            else if (IsUninitializedComp(material, VrmxtMaterialsMtoonxt.StencilPropComp))
             {
-                TrySetFloat(material, VrmcMaterialsMtoonxt.StencilPropComp, 8f);
+                TrySetFloat(material, VrmxtMaterialsMtoonxt.StencilPropComp, 8f);
             }
 
-            if (!IsEnabled(material, VrmcMaterialsMtoonxt.OutlineStencilPropEnabled))
+            if (!IsEnabled(material, VrmxtMaterialsMtoonxt.OutlineStencilPropEnabled))
             {
                 ApplyStencil(material, StencilOff, outline: true, 0);
             }
-            else if (IsUninitializedComp(material, VrmcMaterialsMtoonxt.OutlineStencilPropComp))
+            else if (IsUninitializedComp(material, VrmxtMaterialsMtoonxt.OutlineStencilPropComp))
             {
-                TrySetFloat(material, VrmcMaterialsMtoonxt.OutlineStencilPropComp, 8f);
+                TrySetFloat(material, VrmxtMaterialsMtoonxt.OutlineStencilPropComp, 8f);
             }
 
-            if (IsUninitializedComp(material, VrmcMaterialsMtoonxt.ZTestProp))
+            if (IsUninitializedComp(material, VrmxtMaterialsMtoonxt.ZTestProp))
             {
-                ApplyZTest(material, VrmcMaterialsMtoonxt.ZTestDefault);
+                ApplyZTest(material, VrmxtMaterialsMtoonxt.ZTestDefault);
             }
         }
 
         private static float DefaultZTestUnityFloat()
         {
-            VrmcMaterialsMtoonxt.TryMapCompareFunction(
-                VrmcMaterialsMtoonxt.ZTestDefault,
+            VrmxtMaterialsMtoonxt.TryMapCompareFunction(
+                VrmxtMaterialsMtoonxt.ZTestDefault,
                 out var unityInt
             );
             return unityInt;
@@ -735,7 +735,7 @@ namespace UniVRMXT.Mtoonxt
 
         private static void ApplyStencil(
             Material material,
-            VrmcMaterialsMtoonxtStencil stencil,
+            VrmxtMaterialsMtoonxtStencil stencil,
             bool outline,
             int gpuBase
         )
@@ -753,7 +753,7 @@ namespace UniVRMXT.Mtoonxt
                 material,
                 prefix + "Ref",
                 applied.Enabled
-                    ? VrmcMaterialsMtoonxtStencilRefs.GpuRef(applied.Ref, gpuBase)
+                    ? VrmxtMaterialsMtoonxtStencilRefs.GpuRef(applied.Ref, gpuBase)
                     : applied.Ref
             );
             TrySetFloat(material, prefix + "ReadMask", applied.ReadMask);

@@ -21,7 +21,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override + MToonXT)",
-    Version = "0.1.15",
+    Version = "0.1.16",
     Author = "Mira",
     SupportUrl = "https://github.com/miramocha/UniVRMXT",
     AssetTypes = new[] { typeof(VrmxtManagerAsset) }
@@ -704,7 +704,7 @@ public sealed class VrmxtPlugin : Plugin
             var root = VrmxtCharacterApply.TryFindCharacterRoot(bound.Character);
             if (root != null)
             {
-                VrmcMaterialsMtoonxtStencilRefs.Release(root.GetInstanceID());
+                VrmxtMaterialsMtoonxtStencilRefs.Release(root.GetInstanceID());
             }
 
             VrmxtMaterialsStockShaders.Forget(root);

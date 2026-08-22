@@ -78,11 +78,11 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Sets identity
 | Item | Value |
 |------|--------|
 | Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/Mtoonxt` + `Runtime/VrmxtInstance` + particle/sample shaders |
-| Date | 2026-08-20 |
+| Date | 2026-08-22 |
 
 ## Included
 
-- Format: `VrmxtVfx.cs`, `VrmxtMaterialsOverride.cs`, `VrmcMaterialsMtoonxt.cs`, `VrmcMaterialsMtoonxtStencilCompiler.cs`, `VrmcMaterialsMtoonxtStencilRefs.cs`, `GlbChunks.cs` (includes `TryRebuild`), `GltfImageBytes.cs`
+- Format: `VrmxtVfx.cs`, `VrmxtMaterialsOverride.cs`, `VrmxtMaterialsMtoonxt.cs`, `VrmxtMaterialsMtoonxtStencilCompiler.cs`, `VrmxtMaterialsMtoonxtStencilRefs.cs`, `GlbChunks.cs` (includes `TryRebuild`), `GltfImageBytes.cs`
 - Vfx: Runtime, Instance, Mapper, Data, Importer, GlbTextures, NodeResolver, OwnedParticleMaterial
 - MaterialsOverride: Runtime, Applier, Instance, UnityOverrideSelector, Authoring, Exporter
   (Exporter is a compile dep of Authoring `ResolveUnityVariant`; Warudo does not call export)

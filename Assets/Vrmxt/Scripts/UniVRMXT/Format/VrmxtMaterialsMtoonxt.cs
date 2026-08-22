@@ -6,9 +6,10 @@ using Newtonsoft.Json.Linq;
 
 namespace UniVRMXT.Format
 {
-    public static class VrmcMaterialsMtoonxt
+    public static class VrmxtMaterialsMtoonxt
     {
-        public const string ExtensionName = "VRMC_materials_mtoonxt";
+        public const string ExtensionName = "VRMXT_materials_mtoonxt";
+        private const string RetiredGltfExtensionName = "VRMC_materials_mtoonxt";
         public const string SpecVersionValue = "1.0";
         public const string SiblingMtoonExtensionName = "VRMC_materials_mtoon";
         public const string BuiltinShaderName = "VRMXT/MToonXT10";
@@ -47,7 +48,7 @@ namespace UniVRMXT.Format
         public const string OutlineStencilPropFail = "_M_OutlineStencilFail";
         public const string OutlineStencilPropZFail = "_M_OutlineStencilZFail";
 
-        public static bool TryParse(string json, out VrmcMaterialsMtoonxtExtension result)
+        public static bool TryParse(string json, out VrmxtMaterialsMtoonxtExtension result)
         {
             result = null;
             if (string.IsNullOrWhiteSpace(json))
@@ -70,7 +71,7 @@ namespace UniVRMXT.Format
             }
         }
 
-        public static bool TryParse(JToken root, out VrmcMaterialsMtoonxtExtension result)
+        public static bool TryParse(JToken root, out VrmxtMaterialsMtoonxtExtension result)
         {
             result = null;
 
@@ -94,16 +95,16 @@ namespace UniVRMXT.Format
             TryReadEnum(extension, "zTest", ZTestDefault, TryMapCompareFunction, out var zTest);
             TryReadOptionalBool(extension, "zWrite", out var zWrite);
 
-            result = new VrmcMaterialsMtoonxtExtension(stencil, outlineStencil, zTest, zWrite);
+            result = new VrmxtMaterialsMtoonxtExtension(stencil, outlineStencil, zTest, zWrite);
             return true;
         }
 
-        public static string ToJson(VrmcMaterialsMtoonxtExtension extension)
+        public static string ToJson(VrmxtMaterialsMtoonxtExtension extension)
         {
             return BuildExtensionObject(extension).ToString(Formatting.None);
         }
 
-        public static byte[] ToUtf8Json(VrmcMaterialsMtoonxtExtension extension)
+        public static byte[] ToUtf8Json(VrmxtMaterialsMtoonxtExtension extension)
         {
             return Encoding.UTF8.GetBytes(ToJson(extension));
         }
@@ -186,7 +187,7 @@ namespace UniVRMXT.Format
             }
         }
 
-        private static JObject BuildExtensionObject(VrmcMaterialsMtoonxtExtension extension)
+        private static JObject BuildExtensionObject(VrmxtMaterialsMtoonxtExtension extension)
         {
             var root = new JObject { ["specVersion"] = SpecVersionValue };
 
@@ -225,7 +226,7 @@ namespace UniVRMXT.Format
             return root;
         }
 
-        private static JObject BuildStencilObject(VrmcMaterialsMtoonxtStencil stencil)
+        private static JObject BuildStencilObject(VrmxtMaterialsMtoonxtStencil stencil)
         {
             if (string.IsNullOrEmpty(stencil.Op))
             {
@@ -253,15 +254,15 @@ namespace UniVRMXT.Format
 
         public static bool UsesMaterialsList(string op)
         {
-            return string.Equals(op, VrmcMaterialsMtoonxtStencil.OpInside, StringComparison.Ordinal)
+            return string.Equals(op, VrmxtMaterialsMtoonxtStencil.OpInside, StringComparison.Ordinal)
                 || string.Equals(
                     op,
-                    VrmcMaterialsMtoonxtStencil.OpInsideOverlay,
+                    VrmxtMaterialsMtoonxtStencil.OpInsideOverlay,
                     StringComparison.Ordinal
                 )
                 || string.Equals(
                     op,
-                    VrmcMaterialsMtoonxtStencil.OpOutside,
+                    VrmxtMaterialsMtoonxtStencil.OpOutside,
                     StringComparison.Ordinal
                 );
         }
@@ -334,9 +335,37 @@ namespace UniVRMXT.Format
                 }
             }
 
+            if (HasRetiredGltfKey(rootObject))
+            {
+                return false;
+            }
+
             if (TryGetProperty(rootObject, "specVersion", out _))
             {
                 extension = rootObject;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool HasRetiredGltfKey(JObject rootObject)
+        {
+            if (
+                TryGetProperty(rootObject, RetiredGltfExtensionName, out var retired)
+                && retired is JObject
+            )
+            {
+                return true;
+            }
+
+            if (
+                TryGetProperty(rootObject, "extensions", out var extensionsToken)
+                && extensionsToken is JObject extensions
+                && TryGetProperty(extensions, RetiredGltfExtensionName, out var nested)
+                && nested is JObject
+            )
+            {
                 return true;
             }
 
@@ -365,7 +394,7 @@ namespace UniVRMXT.Format
             JObject extension,
             string propertyName,
             bool allowSame,
-            out VrmcMaterialsMtoonxtStencil stencil
+            out VrmxtMaterialsMtoonxtStencil stencil
         )
         {
             stencil = null;
@@ -392,7 +421,7 @@ namespace UniVRMXT.Format
             JObject obj,
             JToken opToken,
             bool allowSame,
-            out VrmcMaterialsMtoonxtStencil stencil
+            out VrmxtMaterialsMtoonxtStencil stencil
         )
         {
             stencil = null;
@@ -402,25 +431,25 @@ namespace UniVRMXT.Format
             }
 
             var op = opToken.Value<string>();
-            if (string.Equals(op, VrmcMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
+            if (string.Equals(op, VrmxtMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
             {
                 if (TryGetProperty(obj, "materials", out _))
                 {
                     return false;
                 }
 
-                stencil = VrmcMaterialsMtoonxtStencil.FromOp(op, null);
+                stencil = VrmxtMaterialsMtoonxtStencil.FromOp(op, null);
                 return true;
             }
 
-            if (string.Equals(op, VrmcMaterialsMtoonxtStencil.OpSame, StringComparison.Ordinal))
+            if (string.Equals(op, VrmxtMaterialsMtoonxtStencil.OpSame, StringComparison.Ordinal))
             {
                 if (!allowSame || TryGetProperty(obj, "materials", out _))
                 {
                     return false;
                 }
 
-                stencil = VrmcMaterialsMtoonxtStencil.FromOp(op, null);
+                stencil = VrmxtMaterialsMtoonxtStencil.FromOp(op, null);
                 return true;
             }
 
@@ -434,7 +463,7 @@ namespace UniVRMXT.Format
                 return false;
             }
 
-            stencil = VrmcMaterialsMtoonxtStencil.FromOp(op, materials);
+            stencil = VrmxtMaterialsMtoonxtStencil.FromOp(op, materials);
             return true;
         }
 
@@ -549,24 +578,24 @@ namespace UniVRMXT.Format
         }
     }
 
-    public sealed class VrmcMaterialsMtoonxtExtension
+    public sealed class VrmxtMaterialsMtoonxtExtension
     {
-        public VrmcMaterialsMtoonxtExtension(
-            VrmcMaterialsMtoonxtStencil stencil,
-            VrmcMaterialsMtoonxtStencil outlineStencil,
+        public VrmxtMaterialsMtoonxtExtension(
+            VrmxtMaterialsMtoonxtStencil stencil,
+            VrmxtMaterialsMtoonxtStencil outlineStencil,
             string zTest = null,
             bool? zWrite = null
         )
         {
             Stencil = stencil;
             OutlineStencil = outlineStencil;
-            ZTest = string.IsNullOrEmpty(zTest) ? VrmcMaterialsMtoonxt.ZTestDefault : zTest;
+            ZTest = string.IsNullOrEmpty(zTest) ? VrmxtMaterialsMtoonxt.ZTestDefault : zTest;
             ZWrite = zWrite;
         }
 
-        public VrmcMaterialsMtoonxtStencil Stencil { get; }
+        public VrmxtMaterialsMtoonxtStencil Stencil { get; }
 
-        public VrmcMaterialsMtoonxtStencil OutlineStencil { get; }
+        public VrmxtMaterialsMtoonxtStencil OutlineStencil { get; }
 
         public string ZTest { get; }
 
@@ -576,13 +605,13 @@ namespace UniVRMXT.Format
         {
             get
             {
-                VrmcMaterialsMtoonxt.TryMapCompareFunction(ZTest, out var value);
+                VrmxtMaterialsMtoonxt.TryMapCompareFunction(ZTest, out var value);
                 return value;
             }
         }
     }
 
-    public sealed class VrmcMaterialsMtoonxtStencil
+    public sealed class VrmxtMaterialsMtoonxtStencil
     {
         public const string OpWrite = "write";
         public const string OpInside = "inside";
@@ -590,7 +619,7 @@ namespace UniVRMXT.Format
         public const string OpOutside = "outside";
         public const string OpSame = "same";
 
-        public VrmcMaterialsMtoonxtStencil(
+        public VrmxtMaterialsMtoonxtStencil(
             bool enabled,
             int reference,
             int readMask,
@@ -602,9 +631,9 @@ namespace UniVRMXT.Format
         )
             : this(enabled, reference, readMask, writeMask, comp, pass, fail, zfail, null, null) { }
 
-        public static VrmcMaterialsMtoonxtStencil FromOp(string op, IReadOnlyList<int> materials)
+        public static VrmxtMaterialsMtoonxtStencil FromOp(string op, IReadOnlyList<int> materials)
         {
-            return new VrmcMaterialsMtoonxtStencil(
+            return new VrmxtMaterialsMtoonxtStencil(
                 true,
                 0,
                 255,
@@ -618,9 +647,9 @@ namespace UniVRMXT.Format
             );
         }
 
-        public static VrmcMaterialsMtoonxtStencil Compiled(int reference, string comp, string pass)
+        public static VrmxtMaterialsMtoonxtStencil Compiled(int reference, string comp, string pass)
         {
-            return new VrmcMaterialsMtoonxtStencil(
+            return new VrmxtMaterialsMtoonxtStencil(
                 true,
                 reference,
                 255,
@@ -632,7 +661,7 @@ namespace UniVRMXT.Format
             );
         }
 
-        private VrmcMaterialsMtoonxtStencil(
+        private VrmxtMaterialsMtoonxtStencil(
             bool enabled,
             int reference,
             int readMask,
@@ -680,7 +709,7 @@ namespace UniVRMXT.Format
         {
             get
             {
-                VrmcMaterialsMtoonxt.TryMapCompareFunction(Comp, out var value);
+                VrmxtMaterialsMtoonxt.TryMapCompareFunction(Comp, out var value);
                 return value;
             }
         }
@@ -689,7 +718,7 @@ namespace UniVRMXT.Format
         {
             get
             {
-                VrmcMaterialsMtoonxt.TryMapStencilOp(Pass, out var value);
+                VrmxtMaterialsMtoonxt.TryMapStencilOp(Pass, out var value);
                 return value;
             }
         }
@@ -698,7 +727,7 @@ namespace UniVRMXT.Format
         {
             get
             {
-                VrmcMaterialsMtoonxt.TryMapStencilOp(Fail, out var value);
+                VrmxtMaterialsMtoonxt.TryMapStencilOp(Fail, out var value);
                 return value;
             }
         }
@@ -707,7 +736,7 @@ namespace UniVRMXT.Format
         {
             get
             {
-                VrmcMaterialsMtoonxt.TryMapStencilOp(ZFail, out var value);
+                VrmxtMaterialsMtoonxt.TryMapStencilOp(ZFail, out var value);
                 return value;
             }
         }
