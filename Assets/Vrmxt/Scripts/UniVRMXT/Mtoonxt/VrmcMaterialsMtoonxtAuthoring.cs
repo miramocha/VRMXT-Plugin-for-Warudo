@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UniVRMXT.Format;
@@ -6,11 +7,37 @@ using UniVRMXT.MaterialsOverride;
 namespace UniVRMXT.Mtoonxt
 {
     /// <summary>
-    /// Unity serialized stencil fields ↔ <c>VRMC_materials_mtoonxt</c> objects.
+    /// Unity serialized stencil fields ↔ <c>VRMXT_materials_mtoonxt</c> objects.
     /// Inspector edits the fields. Export (and Apply) build JSON / GPU from them.
     /// </summary>
     public static class VrmcMaterialsMtoonxtAuthoring
     {
+        private static Dictionary<Material, Material> s_exportStockCopies;
+
+        /// <summary>
+        /// Export remap: stock MToon copy of <paramref name="source"/>. Clip lists still
+        /// point at authored assets; <see cref="ToExtension"/> matches via this map.
+        /// </summary>
+        public static void RegisterExportStockCopy(Material source, Material copy)
+        {
+            if (source == null || copy == null)
+            {
+                return;
+            }
+
+            if (s_exportStockCopies == null)
+            {
+                s_exportStockCopies = new Dictionary<Material, Material>();
+            }
+
+            s_exportStockCopies[source] = copy;
+        }
+
+        public static void ClearExportStockCopies()
+        {
+            s_exportStockCopies?.Clear();
+        }
+
         public static void PopulateFromExtensionJson(
             GameObject root,
             VrmcMaterialsMtoonxtInstance store
@@ -369,6 +396,7 @@ namespace UniVRMXT.Mtoonxt
                 return -1;
             }
 
+            var live = ExportLiveMaterial(material);
             for (var i = 0; i < store.Pairs.Count; i++)
             {
                 var pair = store.Pairs[i];
@@ -384,14 +412,95 @@ namespace UniVRMXT.Mtoonxt
                     )
                 )
                 {
-                    if (candidate == material)
+                    if (candidate == live || candidate == material)
                     {
                         return pair.GltfMaterialIndex;
                     }
                 }
             }
 
-            return -1;
+            return FindGltfIndexByUniqueStrippedName(store, material);
+        }
+
+        private static Material ExportLiveMaterial(Material material)
+        {
+            if (
+                material == null
+                || s_exportStockCopies == null
+                || !s_exportStockCopies.TryGetValue(material, out var copy)
+                || copy == null
+            )
+            {
+                return material;
+            }
+
+            return copy;
+        }
+
+        /// <summary>
+        /// Export remaps MToonXT to throwaway stock MToon copies; clip lists keep authored
+        /// assets. Name fallback only when a single store pair owns that stripped name so
+        /// <c>Hair#1</c> / <c>Hair#2</c> cannot steal each other's glTF index when no copy map
+        /// is registered.
+        /// </summary>
+        private static int FindGltfIndexByUniqueStrippedName(
+            VrmcMaterialsMtoonxtInstance store,
+            Material material
+        )
+        {
+            var clipped = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(material.name);
+            if (string.IsNullOrEmpty(clipped))
+            {
+                return -1;
+            }
+
+            var match = -1;
+            var hits = 0;
+            for (var i = 0; i < store.Pairs.Count; i++)
+            {
+                var pair = store.Pairs[i];
+                if (pair == null)
+                {
+                    continue;
+                }
+
+                if (!StoreKeyBaseEquals(pair.MaterialName, clipped))
+                {
+                    continue;
+                }
+
+                hits++;
+                match = pair.GltfMaterialIndex;
+                if (hits > 1)
+                {
+                    return -1;
+                }
+            }
+
+            return hits == 1 ? match : -1;
+        }
+
+        private static bool StoreKeyBaseEquals(string storeKey, string strippedMaterialName)
+        {
+            if (string.IsNullOrEmpty(storeKey))
+            {
+                return false;
+            }
+
+            if (
+                VrmxtMaterialsOverrideRuntime.TryGetDisambiguatedStoreKey(
+                    storeKey,
+                    out var baseName,
+                    out _
+                )
+            )
+            {
+                storeKey = baseName;
+            }
+
+            var strippedKey = VrmxtMaterialsOverrideRuntime.StripUnityInstanceSuffix(storeKey);
+            return !string.IsNullOrEmpty(strippedKey)
+                && string.Equals(strippedKey, strippedMaterialName, StringComparison.Ordinal);
         }
     }
 }

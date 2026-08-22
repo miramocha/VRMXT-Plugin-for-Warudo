@@ -13,7 +13,7 @@ using Object = UnityEngine.Object;
 
 /// <summary>
 /// Post-load VRMXT applies on a Character GameObject: <c>VRMXT_sprite_particle</c>,
-/// <c>VRMXT_materials_override</c>, and <c>VRMC_materials_mtoonxt</c>.
+/// <c>VRMXT_materials_override</c>, and <c>VRMXT_materials_mtoonxt</c>.
 /// </summary>
 public static class VrmxtCharacterApply
 {
@@ -154,7 +154,7 @@ public static class VrmxtCharacterApply
     }
 
     /// <summary>
-    /// Swap stock MToon to the pipeline MToonXT shader when <c>VRMC_materials_mtoonxt</c> is valid
+    /// Swap stock MToon to the pipeline MToonXT shader when <c>VRMXT_materials_mtoonxt</c> is valid
     /// and the shader UMod has warmed. Skips materials where materials-override would apply.
     /// </summary>
     public static int ApplyMtoonxt(GameObject root, string gltfJson)

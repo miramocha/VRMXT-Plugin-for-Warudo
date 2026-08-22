@@ -9,7 +9,7 @@ using UnityEngine;
 namespace UniVRMXT.Mtoonxt
 {
     /// <summary>
-    /// Attach parsed <c>VRMC_materials_mtoonxt</c> objects without UniVRM types.
+    /// Attach parsed <c>VRMXT_materials_mtoonxt</c> objects without UniVRM types.
     /// </summary>
     public static class VrmcMaterialsMtoonxtRuntime
     {

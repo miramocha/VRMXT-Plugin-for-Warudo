@@ -8,7 +8,7 @@ namespace UniVRMXT.Format
 {
     public static class VrmcMaterialsMtoonxt
     {
-        public const string ExtensionName = "VRMC_materials_mtoonxt";
+        public const string ExtensionName = "VRMXT_materials_mtoonxt";
         public const string SpecVersionValue = "1.0";
         public const string SiblingMtoonExtensionName = "VRMC_materials_mtoon";
         public const string BuiltinShaderName = "VRMXT/MToonXT10";

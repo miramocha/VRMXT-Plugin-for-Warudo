@@ -39,7 +39,7 @@ namespace UniVRMXT.Mtoonxt
     }
 
     /// <summary>
-    /// Runtime holder for <c>VRMC_materials_mtoonxt</c> on a loaded avatar root.
+    /// Runtime holder for <c>VRMXT_materials_mtoonxt</c> on a loaded avatar root.
     /// Inspector authors Unity fields; export writes glTF JSON.
     /// </summary>
     [DisallowMultipleComponent]
