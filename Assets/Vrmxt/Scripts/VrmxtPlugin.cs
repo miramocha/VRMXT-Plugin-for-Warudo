@@ -704,7 +704,7 @@ public sealed class VrmxtPlugin : Plugin
             var root = VrmxtCharacterApply.TryFindCharacterRoot(bound.Character);
             if (root != null)
             {
-                VrmcMaterialsMtoonxtStencilRefs.Release(root.GetInstanceID());
+                VrmxtMaterialsMtoonxtStencilRefs.Release(root.GetInstanceID());
             }
 
             VrmxtMaterialsStockShaders.Forget(root);

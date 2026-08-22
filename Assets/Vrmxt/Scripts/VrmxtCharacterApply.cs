@@ -164,7 +164,7 @@ public static class VrmxtCharacterApply
             return 0;
         }
 
-        var applied = VrmcMaterialsMtoonxtApplier.Apply(
+        var applied = VrmxtMaterialsMtoonxtApplier.Apply(
             root,
             gltfJson,
             VrmxtMaterialsOverrideApplier.ShaderResolveProvider

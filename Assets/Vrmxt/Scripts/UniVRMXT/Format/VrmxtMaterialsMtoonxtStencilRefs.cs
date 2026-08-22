@@ -6,7 +6,7 @@ namespace UniVRMXT.Format
     /// Per-loaded-root GPU stencil Ref band. Compile stays file-local 1, 2, …;
     /// Apply adds <c>gpuRef = local + base - 1</c>. Not serialized in glTF.
     /// </summary>
-    public static class VrmcMaterialsMtoonxtStencilRefs
+    public static class VrmxtMaterialsMtoonxtStencilRefs
     {
         public const int BandStart = 32;
         public const int MaxRef = 255;

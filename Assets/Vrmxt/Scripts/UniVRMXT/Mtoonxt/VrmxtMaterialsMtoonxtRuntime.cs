@@ -11,12 +11,12 @@ namespace UniVRMXT.Mtoonxt
     /// <summary>
     /// Attach parsed <c>VRMXT_materials_mtoonxt</c> objects without UniVRM types.
     /// </summary>
-    public static class VrmcMaterialsMtoonxtRuntime
+    public static class VrmxtMaterialsMtoonxtRuntime
     {
         public static bool TryAttachFromGltfJson(
             GameObject root,
             string gltfJson,
-            out VrmcMaterialsMtoonxtInstance store)
+            out VrmxtMaterialsMtoonxtInstance store)
         {
             store = null;
             if (root == null)
@@ -24,7 +24,7 @@ namespace UniVRMXT.Mtoonxt
                 return false;
             }
 
-            var found = new List<VrmcMaterialsMtoonxtPair>();
+            var found = new List<VrmxtMaterialsMtoonxtPair>();
             if (!string.IsNullOrWhiteSpace(gltfJson) &&
                 TryGetMaterialsArray(gltfJson, out var materials))
             {
@@ -41,13 +41,13 @@ namespace UniVRMXT.Mtoonxt
                         continue;
                     }
 
-                    if (!VrmcMaterialsMtoonxt.TryParse(extensionObject, out _))
+                    if (!VrmxtMaterialsMtoonxt.TryParse(extensionObject, out _))
                     {
                         continue;
                     }
 
                     var materialName = VrmxtMaterialsOverrideRuntime.GetMaterialName(materialObject, i);
-                    found.Add(new VrmcMaterialsMtoonxtPair(
+                    found.Add(new VrmxtMaterialsMtoonxtPair(
                         materialName,
                         extensionObject.ToString(Formatting.None),
                         i));
@@ -65,13 +65,13 @@ namespace UniVRMXT.Mtoonxt
             if (found.Count > 0)
             {
                 store.SetPairs(found);
-                VrmcMaterialsMtoonxtAuthoring.PopulateFromExtensionJson(root, store);
+                VrmxtMaterialsMtoonxtAuthoring.PopulateFromExtensionJson(root, store);
             }
 
             return true;
         }
 
-        private static void DisambiguateDuplicateNames(List<VrmcMaterialsMtoonxtPair> found)
+        private static void DisambiguateDuplicateNames(List<VrmxtMaterialsMtoonxtPair> found)
         {
             var counts = new Dictionary<string, int>(StringComparer.Ordinal);
             for (var i = 0; i < found.Count; i++)
@@ -139,7 +139,7 @@ namespace UniVRMXT.Mtoonxt
             }
 
             if (!extensions.TryGetValue(
-                    VrmcMaterialsMtoonxt.ExtensionName,
+                    VrmxtMaterialsMtoonxt.ExtensionName,
                     StringComparison.Ordinal,
                     out var extensionToken))
             {
@@ -150,12 +150,12 @@ namespace UniVRMXT.Mtoonxt
             return extensionObject != null;
         }
 
-        private static VrmcMaterialsMtoonxtInstance EnsureInstance(GameObject root)
+        private static VrmxtMaterialsMtoonxtInstance EnsureInstance(GameObject root)
         {
-            var instance = root.GetComponent<VrmcMaterialsMtoonxtInstance>();
+            var instance = root.GetComponent<VrmxtMaterialsMtoonxtInstance>();
             if (instance == null)
             {
-                instance = root.AddComponent<VrmcMaterialsMtoonxtInstance>();
+                instance = root.AddComponent<VrmxtMaterialsMtoonxtInstance>();
             }
 
             return instance;
