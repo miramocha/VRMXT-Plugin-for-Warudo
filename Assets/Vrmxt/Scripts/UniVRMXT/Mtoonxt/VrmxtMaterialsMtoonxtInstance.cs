@@ -5,7 +5,7 @@ using UniVRMXT.Format;
 
 namespace UniVRMXT.Mtoonxt
 {
-    public enum VrmcMtoonxtBodyStencilOp
+    public enum VrmxtMtoonxtBodyStencilOp
     {
         Off = 0,
         Write = 1,
@@ -20,7 +20,7 @@ namespace UniVRMXT.Mtoonxt
         ClipInsideOverlay = 4,
     }
 
-    public enum VrmcMtoonxtOutlineStencilOp
+    public enum VrmxtMtoonxtOutlineStencilOp
     {
         Off = 0,
 
@@ -72,8 +72,8 @@ namespace UniVRMXT.Mtoonxt
     {
         public string MaterialName;
         public int GltfMaterialIndex = -1;
-        public VrmcMtoonxtBodyStencilOp BodyOp;
-        public VrmcMtoonxtOutlineStencilOp OutlineOp;
+        public VrmxtMtoonxtBodyStencilOp BodyOp;
+        public VrmxtMtoonxtOutlineStencilOp OutlineOp;
         public List<Material> StencilTargets = new List<Material>();
         public List<Material> OutlineStencilTargets = new List<Material>();
 

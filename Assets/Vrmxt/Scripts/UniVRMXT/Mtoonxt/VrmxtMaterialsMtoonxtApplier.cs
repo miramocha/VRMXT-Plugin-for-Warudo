@@ -450,7 +450,7 @@ namespace UniVRMXT.Mtoonxt
             TrySetFloat(material, "_M_CullMode", doubleSided ? 0f : 2f);
             SetKeyword(material, VrmxtMaterialsMtoonxt.OverlayDepthKeyword, false);
             SetKeyword(material, VrmxtMaterialsMtoonxt.OutlineOverlayDepthKeyword, false);
-            ApplyOverlayColorPasses(material, false, false);
+            ApplyOverlayColorPasses(material, bodyOverlay: false, outlineOverlay: false);
             if (material.HasProperty("_RenderQueueOffset"))
             {
                 material.SetInt("_RenderQueueOffset", renderQueueOffset);
