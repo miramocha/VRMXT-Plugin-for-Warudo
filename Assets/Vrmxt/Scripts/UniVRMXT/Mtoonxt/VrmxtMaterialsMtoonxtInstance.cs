@@ -5,50 +5,52 @@ using UniVRMXT.Format;
 
 namespace UniVRMXT.Mtoonxt
 {
-    public enum VrmxtMtoonxtBodyStencilOp
+    public enum VrmxtMtoonxtStencilComparison
     {
-        Off = 0,
-        Write = 1,
-
-        [InspectorName("Clip inside")]
-        ClipInside = 2,
-
-        [InspectorName("Clip outside")]
-        ClipOutside = 3,
-
-        [InspectorName("Clip inside overlay")]
-        ClipInsideOverlay = 4,
+        Outside = 0,
+        Inside = 1,
     }
 
-    public enum VrmxtMtoonxtOutlineStencilOp
+    public enum VrmxtMtoonxtDepthTest
     {
-        Off = 0,
-
-        [InspectorName("Same as body")]
-        Same = 1,
-        Write = 2,
-
-        [InspectorName("Clip inside")]
-        ClipInside = 3,
-
-        [InspectorName("Clip outside")]
-        ClipOutside = 4,
-
-        [InspectorName("Clip inside overlay")]
-        ClipInsideOverlay = 5,
+        Never = 1,
+        Less = 2,
+        Equal = 3,
+        LessEqual = 4,
+        Greater = 5,
+        NotEqual = 6,
+        GreaterEqual = 7,
+        Always = 8,
     }
 
     /// <summary>
     /// Runtime holder for <c>VRMXT_materials_mtoonxt</c> on a loaded avatar root.
     /// Inspector authors Unity fields; export writes glTF JSON.
     /// </summary>
+    [ExecuteAlways]
     [DisallowMultipleComponent]
     public sealed class VrmxtMaterialsMtoonxtInstance : MonoBehaviour
     {
         [SerializeField]
         private List<VrmxtMaterialsMtoonxtPair> pairs = new List<VrmxtMaterialsMtoonxtPair>();
 
+        [SerializeField]
+        private List<VrmxtMaterialsMtoonxtStencilAuthoring> stencils =
+            new List<VrmxtMaterialsMtoonxtStencilAuthoring>();
+
         public IReadOnlyList<VrmxtMaterialsMtoonxtPair> Pairs => pairs;
+
+        public IReadOnlyList<VrmxtMaterialsMtoonxtStencilAuthoring> Stencils => stencils;
+
+        private void OnEnable()
+        {
+            // Native material layers and coverage buffers are derived runtime state.
+            // Rebuild them from the portable graph after a domain reload, scene
+            // reopen, or object re-enable from the serialized authoring graph on this store.
+            // The initial import path may invoke this before SetPairs/SetStencils;
+            // that empty reapply is harmless and the importer performs the complete Apply next.
+            VrmxtMaterialsMtoonxtApplier.ReapplyStencils(gameObject, this);
+        }
 
         private void OnDestroy()
         {
@@ -65,6 +67,15 @@ namespace UniVRMXT.Mtoonxt
 
             pairs.AddRange(values);
         }
+
+        public void SetStencils(IEnumerable<VrmxtMaterialsMtoonxtStencilAuthoring> values)
+        {
+            stencils.Clear();
+            if (values != null)
+            {
+                stencils.AddRange(values);
+            }
+        }
     }
 
     [Serializable]
@@ -72,10 +83,6 @@ namespace UniVRMXT.Mtoonxt
     {
         public string MaterialName;
         public int GltfMaterialIndex = -1;
-        public VrmxtMtoonxtBodyStencilOp BodyOp;
-        public VrmxtMtoonxtOutlineStencilOp OutlineOp;
-        public List<Material> StencilTargets = new List<Material>();
-        public List<Material> OutlineStencilTargets = new List<Material>();
 
         /// <summary>
         /// Import leftover (research <c>zTest</c> / <c>zWrite</c>). Not an authoring field.
@@ -93,6 +100,42 @@ namespace UniVRMXT.Mtoonxt
             MaterialName = materialName;
             ExtensionJson = extensionJson;
             GltfMaterialIndex = gltfMaterialIndex;
+        }
+    }
+
+    [Serializable]
+    public sealed class VrmxtMaterialsMtoonxtStencilAuthoring
+    {
+        public List<Material> Writers = new List<Material>();
+        public List<Material> Readers = new List<Material>();
+        public VrmxtMtoonxtStencilComparison Comparison = VrmxtMtoonxtStencilComparison.Outside;
+        public bool ShowWritersThroughOccluders;
+        public bool WritersOnlyInsideReaders;
+        public bool WritersOnlyOutsideReaders;
+        public bool WritersSelfOcclude = true;
+        public bool IgnoreOccludedReaderAreas = true;
+        public bool WritersWriteColor = true;
+        public bool WritersWriteDepth = true;
+        public bool ReadersWriteDepth = true;
+        public VrmxtMtoonxtDepthTest WriterDepthTest = VrmxtMtoonxtDepthTest.LessEqual;
+        public VrmxtMtoonxtDepthTest ReaderDepthTest = VrmxtMtoonxtDepthTest.LessEqual;
+
+        public VrmxtMaterialsMtoonxtStencilAuthoring() { }
+
+        public VrmxtMaterialsMtoonxtStencilAuthoring(
+            IEnumerable<Material> writers,
+            IEnumerable<Material> readers
+        )
+        {
+            if (writers != null)
+            {
+                Writers.AddRange(writers);
+            }
+
+            if (readers != null)
+            {
+                Readers.AddRange(readers);
+            }
         }
     }
 }

@@ -1,419 +1,408 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
+using UniVRMXT.Format;
 
-namespace UniVRMXT.Format
+namespace UniVRMXT.Mtoonxt
 {
+    public enum VrmxtMtoonxtCoverageMode
+    {
+        None = 0,
+        FullSceneWithoutWriters = 1,
+        FullReaderSilhouette = 2,
+    }
+
+    public sealed class VrmxtMtoonxtStencilPass
+    {
+        public VrmxtMtoonxtStencilPass(
+            string comp,
+            string pass,
+            string zTest,
+            bool zWrite,
+            bool cullBack,
+            bool writeColor
+        )
+        {
+            Comp = comp;
+            Pass = pass;
+            ZTest = zTest;
+            ZWrite = zWrite;
+            CullBack = cullBack;
+            WriteColor = writeColor;
+        }
+
+        public string Comp { get; }
+        public string Pass { get; }
+        public string ZTest { get; }
+        public bool ZWrite { get; }
+        public bool CullBack { get; }
+        public bool WriteColor { get; }
+    }
+
+    public sealed class VrmxtMtoonxtStencilPlan
+    {
+        public VrmxtMtoonxtStencilPlan(
+            VrmxtMaterialsMtoonxtStencil source,
+            int localRef,
+            VrmxtMtoonxtStencilPass writerPrimary,
+            VrmxtMtoonxtStencilPass writerSecondary,
+            VrmxtMtoonxtStencilPass reader,
+            bool writersStampMask,
+            bool readersStampMask,
+            VrmxtMtoonxtCoverageMode coverageMode
+        )
+        {
+            Source = source;
+            LocalRef = localRef;
+            WriterPrimary = writerPrimary;
+            WriterSecondary = writerSecondary;
+            Reader = reader;
+            WritersStampMask = writersStampMask;
+            ReadersStampMask = readersStampMask;
+            CoverageMode = coverageMode;
+        }
+
+        public VrmxtMaterialsMtoonxtStencil Source { get; }
+        public int LocalRef { get; }
+        public VrmxtMtoonxtStencilPass WriterPrimary { get; }
+        public VrmxtMtoonxtStencilPass WriterSecondary { get; }
+        public VrmxtMtoonxtStencilPass Reader { get; }
+        public bool WritersStampMask { get; }
+        public bool ReadersStampMask { get; }
+        public VrmxtMtoonxtCoverageMode CoverageMode { get; }
+    }
+
     /// <summary>
-    /// Compile <c>op</c> + material indices to GPU Ref / compare / pass.
-    /// One Ref table for body and outline. Clip lists resolve writers via body
-    /// <c>stencil.op</c> <c>write</c>.
+    /// Maps the portable stencil graph to the Unity pass choreography confirmed by
+    /// the Blender/Unity M01-M10 and A01-A03 parity matrix.
     /// </summary>
     public static class VrmxtMaterialsMtoonxtStencilCompiler
     {
-        public static void Compile(
-            IReadOnlyList<VrmxtMaterialsMtoonxtExtension> extrasByIndex,
-            out VrmxtMaterialsMtoonxtStencil[] body,
-            out VrmxtMaterialsMtoonxtStencil[] outline
+        public static List<VrmxtMtoonxtStencilPlan> Compile(
+            IReadOnlyList<VrmxtMaterialsMtoonxtStencil> stencils,
+            int firstLocalRef
         )
         {
-            var count = extrasByIndex != null ? extrasByIndex.Count : 0;
-            body = new VrmxtMaterialsMtoonxtStencil[count];
-            outline = new VrmxtMaterialsMtoonxtStencil[count];
-            if (count == 0)
+            var result = new List<VrmxtMtoonxtStencilPlan>();
+            if (stencils == null)
             {
-                return;
+                return result;
             }
 
-            var sets = new Dictionary<string, int[]>(StringComparer.Ordinal);
-            var writerToKeys = new Dictionary<int, HashSet<string>>();
-
-            for (var i = 0; i < count; i++)
+            var compiledStencils = CoalesceCompatibleStencils(stencils);
+            var nextRef = Math.Max(1, firstLocalRef);
+            for (var i = 0; i < compiledStencils.Count && nextRef <= 255; i++)
             {
-                CollectReaderSet(
-                    extrasByIndex,
-                    count,
-                    i,
-                    GetSource(extrasByIndex[i], body: true),
-                    sets,
-                    writerToKeys
-                );
-                CollectReaderSet(
-                    extrasByIndex,
-                    count,
-                    i,
-                    GetSource(extrasByIndex[i], body: false),
-                    sets,
-                    writerToKeys
-                );
-            }
-
-            for (var i = 0; i < count; i++)
-            {
-                CollectUnlistedWrite(
-                    GetSource(extrasByIndex[i], body: true),
-                    i,
-                    sets,
-                    writerToKeys
-                );
-                CollectUnlistedWrite(
-                    GetSource(extrasByIndex[i], body: false),
-                    i,
-                    sets,
-                    writerToKeys
-                );
-            }
-
-            var invalidKeys = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var pair in writerToKeys)
-            {
-                if (pair.Value.Count > 1)
-                {
-                    foreach (var key in pair.Value)
-                    {
-                        invalidKeys.Add(key);
-                    }
-                }
-            }
-
-            var refByKey = new Dictionary<string, int>(StringComparer.Ordinal);
-            var nextRef = 1;
-            var orderedKeys = new List<string>(sets.Keys);
-            orderedKeys.Sort(StringComparer.Ordinal);
-            for (var k = 0; k < orderedKeys.Count; k++)
-            {
-                var key = orderedKeys[k];
-                if (invalidKeys.Contains(key) || nextRef > 255)
+                var stencil = compiledStencils[i];
+                if (stencil == null)
                 {
                     continue;
                 }
 
-                refByKey[key] = nextRef;
+                result.Add(CompileOne(stencil, nextRef));
                 nextRef++;
             }
 
-            for (var i = 0; i < count; i++)
+            return result;
+        }
+
+        private static List<VrmxtMaterialsMtoonxtStencil> CoalesceCompatibleStencils(
+            IReadOnlyList<VrmxtMaterialsMtoonxtStencil> stencils
+        )
+        {
+            var result = new List<VrmxtMaterialsMtoonxtStencil>();
+            for (var i = 0; i < stencils.Count; i++)
             {
-                body[i] = CompileOne(
-                    i,
-                    GetSource(extrasByIndex[i], body: true),
-                    isBody: true,
-                    extrasByIndex,
-                    count,
-                    writerToKeys,
-                    invalidKeys,
-                    refByKey,
-                    body
+                var stencil = stencils[i];
+                if (stencil == null)
+                {
+                    continue;
+                }
+
+                var match = -1;
+                var mergeWriters = false;
+                for (var j = 0; j < result.Count; j++)
+                {
+                    if (SameWriterPresentation(result[j], stencil))
+                    {
+                        match = j;
+                        break;
+                    }
+
+                    if (SameReaderPresentation(result[j], stencil))
+                    {
+                        match = j;
+                        mergeWriters = true;
+                        break;
+                    }
+                }
+
+                if (match < 0)
+                {
+                    result.Add(stencil);
+                    continue;
+                }
+
+                if (mergeWriters)
+                {
+                    var writers = new List<int>(result[match].Writers);
+                    for (var j = 0; j < stencil.Writers.Count; j++)
+                    {
+                        var writer = stencil.Writers[j];
+                        if (!writers.Contains(writer) && !Contains(result[match].Readers, writer))
+                        {
+                            writers.Add(writer);
+                        }
+                    }
+
+                    result[match] = result[match].WithMaterialIndices(
+                        writers,
+                        result[match].Readers
+                    );
+                    continue;
+                }
+
+                var readers = new List<int>(result[match].Readers);
+                for (var j = 0; j < stencil.Readers.Count; j++)
+                {
+                    var reader = stencil.Readers[j];
+                    if (!readers.Contains(reader) && !Contains(result[match].Writers, reader))
+                    {
+                        readers.Add(reader);
+                    }
+                }
+
+                result[match] = result[match].WithMaterialIndices(
+                    result[match].Writers,
+                    readers
                 );
             }
 
-            for (var i = 0; i < count; i++)
-            {
-                outline[i] = CompileOne(
-                    i,
-                    GetSource(extrasByIndex[i], body: false),
-                    isBody: false,
-                    extrasByIndex,
-                    count,
-                    writerToKeys,
-                    invalidKeys,
-                    refByKey,
-                    body
+            return result;
+        }
+
+        private static bool SameWriterPresentation(
+            VrmxtMaterialsMtoonxtStencil left,
+            VrmxtMaterialsMtoonxtStencil right
+        )
+        {
+            return SameSet(left.Writers, right.Writers)
+                && SamePresentation(left, right);
+        }
+
+        private static bool SameReaderPresentation(
+            VrmxtMaterialsMtoonxtStencil left,
+            VrmxtMaterialsMtoonxtStencil right
+        )
+        {
+            return SameSet(left.Readers, right.Readers)
+                && SamePresentation(left, right);
+        }
+
+        private static bool SamePresentation(
+            VrmxtMaterialsMtoonxtStencil left,
+            VrmxtMaterialsMtoonxtStencil right
+        )
+        {
+            return string.Equals(left.Comparison, right.Comparison, StringComparison.Ordinal)
+                && left.ShowWritersThroughOccluders == right.ShowWritersThroughOccluders
+                && left.WritersOnlyInsideReaders == right.WritersOnlyInsideReaders
+                && left.WritersOnlyOutsideReaders == right.WritersOnlyOutsideReaders
+                && left.WritersSelfOcclude == right.WritersSelfOcclude
+                && left.IgnoreOccludedReaderAreas == right.IgnoreOccludedReaderAreas
+                && left.WritersWriteColor == right.WritersWriteColor
+                && left.WritersWriteDepth == right.WritersWriteDepth
+                && left.ReadersWriteDepth == right.ReadersWriteDepth
+                && string.Equals(
+                    left.WriterDepthTest,
+                    right.WriterDepthTest,
+                    StringComparison.Ordinal
+                )
+                && string.Equals(
+                    left.ReaderDepthTest,
+                    right.ReaderDepthTest,
+                    StringComparison.Ordinal
                 );
-            }
         }
 
-        private static void CollectReaderSet(
-            IReadOnlyList<VrmxtMaterialsMtoonxtExtension> extrasByIndex,
-            int count,
-            int readerIndex,
-            VrmxtMaterialsMtoonxtStencil stencil,
-            Dictionary<string, int[]> sets,
-            Dictionary<int, HashSet<string>> writerToKeys
-        )
+        private static bool SameSet(IReadOnlyList<int> left, IReadOnlyList<int> right)
         {
-            if (stencil == null || !stencil.HasOp)
-            {
-                return;
-            }
-
-            if (
-                string.Equals(
-                    stencil.Op,
-                    VrmxtMaterialsMtoonxtStencil.OpSame,
-                    StringComparison.Ordinal
-                )
-                || string.Equals(
-                    stencil.Op,
-                    VrmxtMaterialsMtoonxtStencil.OpWrite,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                return;
-            }
-
-            if (
-                !TryNormalizeReaderSet(
-                    stencil,
-                    readerIndex,
-                    count,
-                    extrasByIndex,
-                    out var sorted,
-                    out var key
-                )
-            )
-            {
-                return;
-            }
-
-            sets[key] = sorted;
-            RegisterWriters(writerToKeys, sorted, key);
-        }
-
-        private static void CollectUnlistedWrite(
-            VrmxtMaterialsMtoonxtStencil stencil,
-            int index,
-            Dictionary<string, int[]> sets,
-            Dictionary<int, HashSet<string>> writerToKeys
-        )
-        {
-            if (
-                stencil == null
-                || !string.Equals(
-                    stencil.Op,
-                    VrmxtMaterialsMtoonxtStencil.OpWrite,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                return;
-            }
-
-            if (writerToKeys.ContainsKey(index))
-            {
-                return;
-            }
-
-            var singleton = new[] { index };
-            var key = MakeKey(singleton);
-            sets[key] = singleton;
-            RegisterWriters(writerToKeys, singleton, key);
-        }
-
-        private static VrmxtMaterialsMtoonxtStencil CompileOne(
-            int index,
-            VrmxtMaterialsMtoonxtStencil source,
-            bool isBody,
-            IReadOnlyList<VrmxtMaterialsMtoonxtExtension> extrasByIndex,
-            int count,
-            Dictionary<int, HashSet<string>> writerToKeys,
-            HashSet<string> invalidKeys,
-            Dictionary<string, int> refByKey,
-            VrmxtMaterialsMtoonxtStencil[] bodyOut
-        )
-        {
-            if (source == null || !source.HasOp)
-            {
-                return null;
-            }
-
-            if (
-                string.Equals(
-                    source.Op,
-                    VrmxtMaterialsMtoonxtStencil.OpSame,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                if (isBody)
-                {
-                    return null;
-                }
-
-                return bodyOut[index];
-            }
-
-            if (
-                string.Equals(
-                    source.Op,
-                    VrmxtMaterialsMtoonxtStencil.OpWrite,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                if (!writerToKeys.TryGetValue(index, out var keys) || keys.Count != 1)
-                {
-                    return null;
-                }
-
-                string onlyKey = null;
-                foreach (var key in keys)
-                {
-                    onlyKey = key;
-                }
-
-                if (
-                    onlyKey == null
-                    || invalidKeys.Contains(onlyKey)
-                    || !refByKey.TryGetValue(onlyKey, out var writeRef)
-                )
-                {
-                    return null;
-                }
-
-                return VrmxtMaterialsMtoonxtStencil.Compiled(writeRef, "always", "replace");
-            }
-
-            if (
-                !TryNormalizeReaderSet(
-                    source,
-                    index,
-                    count,
-                    extrasByIndex,
-                    out _,
-                    out var readerKey
-                )
-                || invalidKeys.Contains(readerKey)
-                || !refByKey.TryGetValue(readerKey, out var clipRef)
-            )
-            {
-                return null;
-            }
-
-            if (
-                string.Equals(
-                    source.Op,
-                    VrmxtMaterialsMtoonxtStencil.OpInside,
-                    StringComparison.Ordinal
-                )
-                || string.Equals(
-                    source.Op,
-                    VrmxtMaterialsMtoonxtStencil.OpInsideOverlay,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                return VrmxtMaterialsMtoonxtStencil.Compiled(clipRef, "equal", "keep");
-            }
-
-            if (
-                string.Equals(
-                    source.Op,
-                    VrmxtMaterialsMtoonxtStencil.OpOutside,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                return VrmxtMaterialsMtoonxtStencil.Compiled(clipRef, "notEqual", "keep");
-            }
-
-            return null;
-        }
-
-        private static bool TryNormalizeReaderSet(
-            VrmxtMaterialsMtoonxtStencil stencil,
-            int readerIndex,
-            int materialCount,
-            IReadOnlyList<VrmxtMaterialsMtoonxtExtension> extrasByIndex,
-            out int[] sorted,
-            out string key
-        )
-        {
-            sorted = null;
-            key = null;
-            if (stencil.Materials == null || stencil.Materials.Count == 0)
+            if (left == null || right == null || left.Count != right.Count)
             {
                 return false;
             }
 
-            var unique = new SortedSet<int>();
-            for (var i = 0; i < stencil.Materials.Count; i++)
+            for (var i = 0; i < left.Count; i++)
             {
-                var writerIndex = stencil.Materials[i];
-                if (writerIndex < 0 || writerIndex >= materialCount || writerIndex == readerIndex)
+                if (!Contains(right, left[i]))
                 {
                     return false;
                 }
-
-                var writer = GetBodyWrite(extrasByIndex[writerIndex]);
-                if (
-                    writer == null
-                    || !string.Equals(
-                        writer.Op,
-                        VrmxtMaterialsMtoonxtStencil.OpWrite,
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    return false;
-                }
-
-                unique.Add(writerIndex);
             }
 
-            if (unique.Count == 0)
-            {
-                return false;
-            }
-
-            sorted = new int[unique.Count];
-            unique.CopyTo(sorted);
-            key = MakeKey(sorted);
             return true;
         }
 
-        private static VrmxtMaterialsMtoonxtStencil GetBodyWrite(VrmxtMaterialsMtoonxtExtension extra)
+        private static bool Contains(IReadOnlyList<int> values, int value)
         {
-            return extra != null ? extra.Stencil : null;
+            for (var i = 0; i < values.Count; i++)
+            {
+                if (values[i] == value)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
-        private static void RegisterWriters(
-            Dictionary<int, HashSet<string>> writerToKeys,
-            int[] sorted,
-            string key
+        private static VrmxtMtoonxtStencilPlan CompileOne(
+            VrmxtMaterialsMtoonxtStencil stencil,
+            int localRef
         )
         {
-            for (var i = 0; i < sorted.Length; i++)
-            {
-                var writer = sorted[i];
-                if (!writerToKeys.TryGetValue(writer, out var keys))
-                {
-                    keys = new HashSet<string>(StringComparer.Ordinal);
-                    writerToKeys[writer] = keys;
-                }
+            var writerDepth = stencil.WriterDepthTest;
+            var readerDepth = stencil.ReaderDepthTest;
+            var cullBack = stencil.WritersSelfOcclude;
 
-                keys.Add(key);
+            if (stencil.WritersOnlyInsideReaders)
+            {
+                return new VrmxtMtoonxtStencilPlan(
+                    stencil,
+                    localRef,
+                    Subject(
+                        "equal",
+                        stencil.ShowWritersThroughOccluders ? "always" : writerDepth,
+                        stencil.WritersWriteDepth,
+                        cullBack,
+                        stencil.WritersWriteColor
+                    ),
+                    null,
+                    Mask(readerDepth, stencil.ReadersWriteDepth),
+                    writersStampMask: false,
+                    readersStampMask: true,
+                    coverageMode: stencil.IgnoreOccludedReaderAreas
+                        ? VrmxtMtoonxtCoverageMode.None
+                        : VrmxtMtoonxtCoverageMode.FullReaderSilhouette
+                );
             }
+
+            if (stencil.WritersOnlyOutsideReaders)
+            {
+                var backgroundOnly = stencil.ShowWritersThroughOccluders;
+                return new VrmxtMtoonxtStencilPlan(
+                    stencil,
+                    localRef,
+                    Subject(
+                        "notEqual",
+                        writerDepth,
+                        stencil.WritersWriteDepth,
+                        cullBack,
+                        stencil.WritersWriteColor
+                    ),
+                    null,
+                    backgroundOnly
+                        ? null
+                        : Mask(readerDepth, stencil.ReadersWriteDepth),
+                    writersStampMask: false,
+                    readersStampMask: !backgroundOnly,
+                    coverageMode: backgroundOnly
+                        ? VrmxtMtoonxtCoverageMode.FullSceneWithoutWriters
+                        : (
+                            stencil.IgnoreOccludedReaderAreas
+                                ? VrmxtMtoonxtCoverageMode.None
+                                : VrmxtMtoonxtCoverageMode.FullReaderSilhouette
+                        )
+                );
+            }
+
+            if (stencil.ShowWritersThroughOccluders)
+            {
+                return new VrmxtMtoonxtStencilPlan(
+                    stencil,
+                    localRef,
+                    Subject(
+                        "notEqual",
+                        writerDepth,
+                        stencil.WritersWriteDepth,
+                        cullBack,
+                        stencil.WritersWriteColor
+                    ),
+                    Subject(
+                        "equal",
+                        "always",
+                        stencil.WritersWriteDepth,
+                        cullBack,
+                        stencil.WritersWriteColor
+                    ),
+                    Mask(readerDepth, stencil.ReadersWriteDepth),
+                    writersStampMask: false,
+                    readersStampMask: true,
+                    coverageMode: stencil.IgnoreOccludedReaderAreas
+                        ? VrmxtMtoonxtCoverageMode.None
+                        : VrmxtMtoonxtCoverageMode.FullReaderSilhouette
+                );
+            }
+
+            var readerComp = string.Equals(
+                stencil.Comparison,
+                VrmxtMaterialsMtoonxtStencils.ComparisonInside,
+                StringComparison.Ordinal
+            )
+                ? "equal"
+                : "notEqual";
+            return new VrmxtMtoonxtStencilPlan(
+                stencil,
+                localRef,
+                Mask(
+                    writerDepth,
+                    stencil.WritersWriteDepth,
+                    stencil.WritersWriteColor
+                ),
+                null,
+                Subject(
+                    readerComp,
+                    readerDepth,
+                    stencil.ReadersWriteDepth,
+                    cullBack: false
+                ),
+                writersStampMask: true,
+                readersStampMask: false,
+                coverageMode: VrmxtMtoonxtCoverageMode.None
+            );
         }
 
-        private static string MakeKey(int[] sorted)
-        {
-            var sb = new StringBuilder();
-            for (var i = 0; i < sorted.Length; i++)
-            {
-                if (i > 0)
-                {
-                    sb.Append(',');
-                }
-
-                sb.Append(sorted[i]);
-            }
-
-            return sb.ToString();
-        }
-
-        private static VrmxtMaterialsMtoonxtStencil GetSource(
-            VrmxtMaterialsMtoonxtExtension extra,
-            bool body
+        private static VrmxtMtoonxtStencilPass Mask(
+            string zTest,
+            bool zWrite,
+            bool writeColor = true
         )
         {
-            if (extra == null)
-            {
-                return null;
-            }
+            return new VrmxtMtoonxtStencilPass(
+                "always",
+                "replace",
+                zTest,
+                zWrite,
+                cullBack: false,
+                writeColor: writeColor
+            );
+        }
 
-            return body ? extra.Stencil : extra.OutlineStencil;
+        private static VrmxtMtoonxtStencilPass Subject(
+            string comp,
+            string zTest,
+            bool zWrite,
+            bool cullBack,
+            bool writeColor = true
+        )
+        {
+            return new VrmxtMtoonxtStencilPass(
+                comp,
+                "keep",
+                zTest,
+                zWrite,
+                cullBack,
+                writeColor
+            );
         }
     }
 }
