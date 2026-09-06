@@ -25,9 +25,19 @@ namespace UniVRMXT.Mtoonxt
             }
 
             var found = new List<VrmxtMaterialsMtoonxtPair>();
-            if (!string.IsNullOrWhiteSpace(gltfJson) &&
-                TryGetMaterialsArray(gltfJson, out var materials))
+            var parsedStencils = new List<VrmxtMaterialsMtoonxtStencil>();
+            if (
+                !string.IsNullOrWhiteSpace(gltfJson)
+                && TryGetRoot(gltfJson, out var gltfRoot)
+                && TryGetMaterialsArray(gltfRoot, out var materials)
+            )
             {
+                VrmxtMaterialsMtoonxtStencils.TryParseRoot(
+                    gltfRoot,
+                    materials.Count,
+                    out parsedStencils
+                );
+                var referenced = ReferencedMaterialIndices(parsedStencils);
                 for (var i = 0; i < materials.Count; i++)
                 {
                     var materialObject = materials[i] as JObject;
@@ -36,12 +46,12 @@ namespace UniVRMXT.Mtoonxt
                         continue;
                     }
 
-                    if (!TryGetExtensionObject(materialObject, out var extensionObject))
-                    {
-                        continue;
-                    }
-
-                    if (!VrmxtMaterialsMtoonxt.TryParse(extensionObject, out _))
+                    JObject extensionObject = null;
+                    var hasMaterialExtension = TryGetExtensionObject(
+                        materialObject,
+                        out extensionObject
+                    ) && VrmxtMaterialsMtoonxt.TryParse(extensionObject, out _);
+                    if (!hasMaterialExtension && !referenced.Contains(i))
                     {
                         continue;
                     }
@@ -49,7 +59,9 @@ namespace UniVRMXT.Mtoonxt
                     var materialName = VrmxtMaterialsOverrideRuntime.GetMaterialName(materialObject, i);
                     found.Add(new VrmxtMaterialsMtoonxtPair(
                         materialName,
-                        extensionObject.ToString(Formatting.None),
+                        extensionObject != null
+                            ? extensionObject.ToString(Formatting.None)
+                            : null,
                         i));
                 }
 
@@ -62,10 +74,16 @@ namespace UniVRMXT.Mtoonxt
                 return false;
             }
 
+            store.SetPairs(found);
             if (found.Count > 0)
             {
-                store.SetPairs(found);
                 VrmxtMaterialsMtoonxtAuthoring.PopulateFromExtensionJson(root, store);
+            }
+
+            store.SetStencils(null);
+            if (parsedStencils.Count > 0)
+            {
+                VrmxtMaterialsMtoonxtAuthoring.PopulateStencils(root, store, parsedStencils);
             }
 
             return true;
@@ -95,24 +113,51 @@ namespace UniVRMXT.Mtoonxt
             }
         }
 
-        private static bool TryGetMaterialsArray(string gltfJson, out JArray materials)
+        private static HashSet<int> ReferencedMaterialIndices(
+            IReadOnlyList<VrmxtMaterialsMtoonxtStencil> stencils
+        )
         {
-            materials = null;
+            var result = new HashSet<int>();
+            if (stencils == null)
+            {
+                return result;
+            }
+
+            for (var i = 0; i < stencils.Count; i++)
+            {
+                var stencil = stencils[i];
+                if (stencil == null)
+                {
+                    continue;
+                }
+
+                AddIndices(result, stencil.Writers);
+                AddIndices(result, stencil.Readers);
+            }
+
+            return result;
+        }
+
+        private static void AddIndices(HashSet<int> result, IReadOnlyList<int> values)
+        {
+            if (values == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < values.Count; i++)
+            {
+                result.Add(values[i]);
+            }
+        }
+
+        private static bool TryGetRoot(string gltfJson, out JObject root)
+        {
+            root = null;
             try
             {
-                var root = JToken.Parse(gltfJson) as JObject;
-                if (root == null)
-                {
-                    return false;
-                }
-
-                if (root.TryGetValue("materials", StringComparison.Ordinal, out var materialsToken))
-                {
-                    materials = materialsToken as JArray;
-                    return materials != null;
-                }
-
-                return false;
+                root = JToken.Parse(gltfJson) as JObject;
+                return root != null;
             }
             catch (JsonReaderException)
             {
@@ -122,6 +167,23 @@ namespace UniVRMXT.Mtoonxt
             {
                 return false;
             }
+        }
+
+        private static bool TryGetMaterialsArray(JObject root, out JArray materials)
+        {
+            materials = null;
+            if (root == null)
+            {
+                return false;
+            }
+
+            if (root.TryGetValue("materials", StringComparison.Ordinal, out var materialsToken))
+            {
+                materials = materialsToken as JArray;
+                return materials != null;
+            }
+
+            return false;
         }
 
         private static bool TryGetExtensionObject(JObject materialObject, out JObject extensionObject)

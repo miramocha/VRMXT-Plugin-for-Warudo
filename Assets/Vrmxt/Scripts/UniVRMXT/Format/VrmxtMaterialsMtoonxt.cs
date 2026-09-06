@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -85,17 +84,13 @@ namespace UniVRMXT.Format
                 return false;
             }
 
-            TryParseStencilObject(extension, "stencil", allowSame: false, out var stencil);
-            TryParseStencilObject(
-                extension,
-                "outlineStencil",
-                allowSame: true,
-                out var outlineStencil
-            );
             TryReadEnum(extension, "zTest", ZTestDefault, TryMapCompareFunction, out var zTest);
             TryReadOptionalBool(extension, "zWrite", out var zWrite);
+            // Retired per-material stencil / outlineStencil objects are ignored.
+            TryGetProperty(extension, "stencil", out _);
+            TryGetProperty(extension, "outlineStencil", out _);
 
-            result = new VrmxtMaterialsMtoonxtExtension(stencil, outlineStencil, zTest, zWrite);
+            result = new VrmxtMaterialsMtoonxtExtension(zTest, zWrite);
             return true;
         }
 
@@ -191,24 +186,6 @@ namespace UniVRMXT.Format
         {
             var root = new JObject { ["specVersion"] = SpecVersionValue };
 
-            if (extension != null && extension.Stencil != null)
-            {
-                var stencilObject = BuildStencilObject(extension.Stencil);
-                if (stencilObject != null)
-                {
-                    root["stencil"] = stencilObject;
-                }
-            }
-
-            if (extension != null && extension.OutlineStencil != null)
-            {
-                var outlineObject = BuildStencilObject(extension.OutlineStencil);
-                if (outlineObject != null)
-                {
-                    root["outlineStencil"] = outlineObject;
-                }
-            }
-
             if (
                 extension != null
                 && !string.IsNullOrEmpty(extension.ZTest)
@@ -224,82 +201,6 @@ namespace UniVRMXT.Format
             }
 
             return root;
-        }
-
-        private static JObject BuildStencilObject(VrmxtMaterialsMtoonxtStencil stencil)
-        {
-            if (string.IsNullOrEmpty(stencil.Op))
-            {
-                return null;
-            }
-
-            var opRoot = new JObject { ["op"] = stencil.Op };
-            if (
-                UsesMaterialsList(stencil.Op)
-                && stencil.Materials != null
-                && stencil.Materials.Count > 0
-            )
-            {
-                var list = new JArray();
-                for (var i = 0; i < stencil.Materials.Count; i++)
-                {
-                    list.Add(stencil.Materials[i]);
-                }
-
-                opRoot["materials"] = list;
-            }
-
-            return opRoot;
-        }
-
-        public static bool UsesMaterialsList(string op)
-        {
-            return string.Equals(op, VrmxtMaterialsMtoonxtStencil.OpInside, StringComparison.Ordinal)
-                || string.Equals(
-                    op,
-                    VrmxtMaterialsMtoonxtStencil.OpInsideOverlay,
-                    StringComparison.Ordinal
-                )
-                || string.Equals(
-                    op,
-                    VrmxtMaterialsMtoonxtStencil.OpOutside,
-                    StringComparison.Ordinal
-                );
-        }
-
-        /// <summary>
-        /// Remap clip <c>materials</c> indices. False if any source index fails to map
-        /// (keep the original list).
-        /// </summary>
-        public static bool TryMapClipMaterialIndices(
-            IReadOnlyList<int> source,
-            Func<int, int?> resolve,
-            out int[] mapped
-        )
-        {
-            mapped = null;
-            if (source == null || source.Count == 0 || resolve == null)
-            {
-                return false;
-            }
-
-            var list = new List<int>(source.Count);
-            for (var i = 0; i < source.Count; i++)
-            {
-                var next = resolve(source[i]);
-                if (!next.HasValue)
-                {
-                    return false;
-                }
-
-                if (!list.Contains(next.Value))
-                {
-                    list.Add(next.Value);
-                }
-            }
-
-            mapped = list.ToArray();
-            return mapped.Length > 0;
         }
 
         private static bool TryGetExtensionObject(JToken root, out JObject extension)
@@ -387,115 +288,6 @@ namespace UniVRMXT.Format
             return string.Equals(specVersion, SpecVersionValue, StringComparison.Ordinal);
         }
 
-        /// <summary>
-        /// Parses a stencil object. Missing or invalid → <c>false</c>, <paramref name="stencil"/> null.
-        /// </summary>
-        private static bool TryParseStencilObject(
-            JObject extension,
-            string propertyName,
-            bool allowSame,
-            out VrmxtMaterialsMtoonxtStencil stencil
-        )
-        {
-            stencil = null;
-            if (!TryGetProperty(extension, propertyName, out var token))
-            {
-                return false;
-            }
-
-            var obj = token as JObject;
-            if (obj == null)
-            {
-                return false;
-            }
-
-            if (!TryGetProperty(obj, "op", out var opToken))
-            {
-                return false;
-            }
-
-            return TryParseOpStencilObject(obj, opToken, allowSame, out stencil);
-        }
-
-        private static bool TryParseOpStencilObject(
-            JObject obj,
-            JToken opToken,
-            bool allowSame,
-            out VrmxtMaterialsMtoonxtStencil stencil
-        )
-        {
-            stencil = null;
-            if (opToken.Type != JTokenType.String)
-            {
-                return false;
-            }
-
-            var op = opToken.Value<string>();
-            if (string.Equals(op, VrmxtMaterialsMtoonxtStencil.OpWrite, StringComparison.Ordinal))
-            {
-                if (TryGetProperty(obj, "materials", out _))
-                {
-                    return false;
-                }
-
-                stencil = VrmxtMaterialsMtoonxtStencil.FromOp(op, null);
-                return true;
-            }
-
-            if (string.Equals(op, VrmxtMaterialsMtoonxtStencil.OpSame, StringComparison.Ordinal))
-            {
-                if (!allowSame || TryGetProperty(obj, "materials", out _))
-                {
-                    return false;
-                }
-
-                stencil = VrmxtMaterialsMtoonxtStencil.FromOp(op, null);
-                return true;
-            }
-
-            if (!UsesMaterialsList(op))
-            {
-                return false;
-            }
-
-            if (!TryReadMaterialIndexList(obj, out var materials) || materials.Count == 0)
-            {
-                return false;
-            }
-
-            stencil = VrmxtMaterialsMtoonxtStencil.FromOp(op, materials);
-            return true;
-        }
-
-        private static bool TryReadMaterialIndexList(JObject obj, out List<int> materials)
-        {
-            materials = null;
-            if (!TryGetProperty(obj, "materials", out var token))
-            {
-                return false;
-            }
-
-            var array = token as JArray;
-            if (array == null)
-            {
-                return false;
-            }
-
-            var list = new List<int>(array.Count);
-            for (var i = 0; i < array.Count; i++)
-            {
-                if (!TryGetInt32(array[i], out var index) || index < 0)
-                {
-                    return false;
-                }
-
-                list.Add(index);
-            }
-
-            materials = list;
-            return true;
-        }
-
         private static void TryReadOptionalBool(JObject obj, string name, out bool? value)
         {
             value = null;
@@ -549,53 +341,15 @@ namespace UniVRMXT.Format
         {
             return parent.TryGetValue(propertyName, StringComparison.Ordinal, out token);
         }
-
-        private static bool TryGetInt32(JToken token, out int value)
-        {
-            value = 0;
-            if (
-                token == null
-                || (token.Type != JTokenType.Integer && token.Type != JTokenType.Float)
-            )
-            {
-                return false;
-            }
-
-            var number = token.Value<double>();
-            if (
-                double.IsNaN(number)
-                || double.IsInfinity(number)
-                || number != Math.Truncate(number)
-                || number < int.MinValue
-                || number > int.MaxValue
-            )
-            {
-                return false;
-            }
-
-            value = (int)number;
-            return true;
-        }
     }
 
     public sealed class VrmxtMaterialsMtoonxtExtension
     {
-        public VrmxtMaterialsMtoonxtExtension(
-            VrmxtMaterialsMtoonxtStencil stencil,
-            VrmxtMaterialsMtoonxtStencil outlineStencil,
-            string zTest = null,
-            bool? zWrite = null
-        )
+        public VrmxtMaterialsMtoonxtExtension(string zTest = null, bool? zWrite = null)
         {
-            Stencil = stencil;
-            OutlineStencil = outlineStencil;
             ZTest = string.IsNullOrEmpty(zTest) ? VrmxtMaterialsMtoonxt.ZTestDefault : zTest;
             ZWrite = zWrite;
         }
-
-        public VrmxtMaterialsMtoonxtStencil Stencil { get; }
-
-        public VrmxtMaterialsMtoonxtStencil OutlineStencil { get; }
 
         public string ZTest { get; }
 
@@ -606,137 +360,6 @@ namespace UniVRMXT.Format
             get
             {
                 VrmxtMaterialsMtoonxt.TryMapCompareFunction(ZTest, out var value);
-                return value;
-            }
-        }
-    }
-
-    public sealed class VrmxtMaterialsMtoonxtStencil
-    {
-        public const string OpWrite = "write";
-        public const string OpInside = "inside";
-        public const string OpInsideOverlay = "insideOverlay";
-        public const string OpOutside = "outside";
-        public const string OpSame = "same";
-
-        public VrmxtMaterialsMtoonxtStencil(
-            bool enabled,
-            int reference,
-            int readMask,
-            int writeMask,
-            string comp,
-            string pass,
-            string fail,
-            string zfail
-        )
-            : this(enabled, reference, readMask, writeMask, comp, pass, fail, zfail, null, null) { }
-
-        public static VrmxtMaterialsMtoonxtStencil FromOp(string op, IReadOnlyList<int> materials)
-        {
-            return new VrmxtMaterialsMtoonxtStencil(
-                true,
-                0,
-                255,
-                255,
-                "always",
-                "keep",
-                "keep",
-                "keep",
-                op,
-                materials
-            );
-        }
-
-        public static VrmxtMaterialsMtoonxtStencil Compiled(int reference, string comp, string pass)
-        {
-            return new VrmxtMaterialsMtoonxtStencil(
-                true,
-                reference,
-                255,
-                255,
-                comp,
-                pass,
-                "keep",
-                "keep"
-            );
-        }
-
-        private VrmxtMaterialsMtoonxtStencil(
-            bool enabled,
-            int reference,
-            int readMask,
-            int writeMask,
-            string comp,
-            string pass,
-            string fail,
-            string zfail,
-            string op,
-            IReadOnlyList<int> materials
-        )
-        {
-            Enabled = enabled;
-            Ref = reference;
-            ReadMask = readMask;
-            WriteMask = writeMask;
-            Comp = comp;
-            Pass = pass;
-            Fail = fail;
-            ZFail = zfail;
-            Op = op;
-            Materials = materials;
-        }
-
-        public bool Enabled { get; }
-
-        public int Ref { get; }
-        public int ReadMask { get; }
-        public int WriteMask { get; }
-        public string Comp { get; }
-        public string Pass { get; }
-        public string Fail { get; }
-        public string ZFail { get; }
-
-        public string Op { get; }
-
-        public IReadOnlyList<int> Materials { get; }
-
-        public bool HasOp
-        {
-            get { return !string.IsNullOrEmpty(Op); }
-        }
-
-        public int CompUnityInt
-        {
-            get
-            {
-                VrmxtMaterialsMtoonxt.TryMapCompareFunction(Comp, out var value);
-                return value;
-            }
-        }
-
-        public int PassUnityInt
-        {
-            get
-            {
-                VrmxtMaterialsMtoonxt.TryMapStencilOp(Pass, out var value);
-                return value;
-            }
-        }
-
-        public int FailUnityInt
-        {
-            get
-            {
-                VrmxtMaterialsMtoonxt.TryMapStencilOp(Fail, out var value);
-                return value;
-            }
-        }
-
-        public int ZFailUnityInt
-        {
-            get
-            {
-                VrmxtMaterialsMtoonxt.TryMapStencilOp(ZFail, out var value);
                 return value;
             }
         }
