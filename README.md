@@ -44,5 +44,5 @@ Plugin attribute version: see `Assets/Vrmxt/Scripts/VrmxtPlugin.cs`.
 | | |
 |--|--|
 | Steam Workshop | https://steamcommunity.com/sharedfiles/filedetails/?id=3767350210 |
-| Specs (Warudo host) | https://github.com/miramocha/Extended-VRM-Specs/blob/main/implementations/warudo-vrmxt.md |
-| UniVRMXT | https://github.com/miramocha/UniVRMXT |
+| Specs (Warudo host) | https://github.com/vrmxt/Extended-VRM-Specs/blob/main/implementations/warudo-vrmxt.md |
+| UniVRMXT | https://github.com/vrmxt/UniVRMXT |
