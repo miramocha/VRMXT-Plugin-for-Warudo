@@ -23,7 +23,7 @@ using Warudo.Plugins.Core.Assets.Character;
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override + MToonXT)",
     Version = "0.1.16",
     Author = "Mira",
-    SupportUrl = "https://github.com/miramocha/UniVRMXT",
+    SupportUrl = "https://github.com/vrmxt/UniVRMXT",
     AssetTypes = new[] { typeof(VrmxtManagerAsset) }
 )]
 public sealed class VrmxtPlugin : Plugin
