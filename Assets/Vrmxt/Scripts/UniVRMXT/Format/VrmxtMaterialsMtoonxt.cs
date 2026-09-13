@@ -85,17 +85,10 @@ namespace UniVRMXT.Format
                 return false;
             }
 
-            TryParseStencilObject(extension, "stencil", allowSame: false, out var stencil);
-            TryParseStencilObject(
-                extension,
-                "outlineStencil",
-                allowSame: true,
-                out var outlineStencil
-            );
             TryReadEnum(extension, "zTest", ZTestDefault, TryMapCompareFunction, out var zTest);
             TryReadOptionalBool(extension, "zWrite", out var zWrite);
 
-            result = new VrmxtMaterialsMtoonxtExtension(stencil, outlineStencil, zTest, zWrite);
+            result = new VrmxtMaterialsMtoonxtExtension(null, null, zTest, zWrite);
             return true;
         }
 
@@ -190,24 +183,6 @@ namespace UniVRMXT.Format
         private static JObject BuildExtensionObject(VrmxtMaterialsMtoonxtExtension extension)
         {
             var root = new JObject { ["specVersion"] = SpecVersionValue };
-
-            if (extension != null && extension.Stencil != null)
-            {
-                var stencilObject = BuildStencilObject(extension.Stencil);
-                if (stencilObject != null)
-                {
-                    root["stencil"] = stencilObject;
-                }
-            }
-
-            if (extension != null && extension.OutlineStencil != null)
-            {
-                var outlineObject = BuildStencilObject(extension.OutlineStencil);
-                if (outlineObject != null)
-                {
-                    root["outlineStencil"] = outlineObject;
-                }
-            }
 
             if (
                 extension != null

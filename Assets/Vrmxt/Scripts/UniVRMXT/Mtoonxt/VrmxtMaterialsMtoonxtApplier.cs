@@ -72,7 +72,17 @@ namespace UniVRMXT.Mtoonxt
                 out var compiledBody,
                 out var compiledOutline
             );
-            var gpuBase = AcquireGpuBase(root, compiledBody, compiledOutline);
+            var legacyRefCount = MaxEnabledRef(compiledBody, compiledOutline);
+            VrmxtMaterialsMtoonxtRelationships.TryParseRoot(
+                gltfRoot,
+                extrasByIndex.Length,
+                out var relationships
+            );
+            var relationshipPlans = VrmxtMaterialsMtoonxtRelationshipCompiler.Compile(
+                relationships,
+                legacyRefCount + 1
+            );
+            var gpuBase = AcquireGpuBase(root, legacyRefCount + relationshipPlans.Count);
 
             var applied = 0;
             var pairs = store.Pairs;
@@ -165,7 +175,49 @@ namespace UniVRMXT.Mtoonxt
                 }
             }
 
+            VrmxtMaterialsMtoonxtRelationshipApplier.Apply(
+                root,
+                store,
+                relationshipPlans,
+                gpuBase
+            );
             return applied;
+        }
+
+        /// <summary>
+        /// Rebuild relationship-only material state and auxiliary passes from the serialized
+        /// authoring component. Unity does not serialize the retained command-buffer draw list,
+        /// so imported roots must call this after domain reload and scene/object enable.
+        /// </summary>
+        public static int ReapplyRelationships(
+            GameObject root,
+            VrmxtMaterialsMtoonxtInstance store
+        )
+        {
+            if (root == null || store == null)
+            {
+                return 0;
+            }
+
+            var extrasByIndex = BuildExtrasByIndex(root, store);
+            VrmxtMaterialsMtoonxtStencilCompiler.Compile(
+                extrasByIndex,
+                out var compiledBody,
+                out var compiledOutline
+            );
+            var legacyRefCount = MaxEnabledRef(compiledBody, compiledOutline);
+            var relationships = VrmxtMaterialsMtoonxtAuthoring.ToRelationships(root, store);
+            var relationshipPlans = VrmxtMaterialsMtoonxtRelationshipCompiler.Compile(
+                relationships,
+                legacyRefCount + 1
+            );
+            var gpuBase = AcquireGpuBase(root, legacyRefCount + relationshipPlans.Count);
+            return VrmxtMaterialsMtoonxtRelationshipApplier.Apply(
+                root,
+                store,
+                relationshipPlans,
+                gpuBase
+            );
         }
 
         private static int AcquireGpuBase(
@@ -180,6 +232,22 @@ namespace UniVRMXT.Mtoonxt
             }
 
             var span = MaxEnabledRef(compiledBody, compiledOutline);
+            if (span < 1)
+            {
+                VrmxtMaterialsMtoonxtStencilRefs.Release(root.GetInstanceID());
+                return 0;
+            }
+
+            return VrmxtMaterialsMtoonxtStencilRefs.Acquire(root.GetInstanceID(), span);
+        }
+
+        private static int AcquireGpuBase(GameObject root, int span)
+        {
+            if (root == null)
+            {
+                return 0;
+            }
+
             if (span < 1)
             {
                 VrmxtMaterialsMtoonxtStencilRefs.Release(root.GetInstanceID());
@@ -241,6 +309,44 @@ namespace UniVRMXT.Mtoonxt
                 if (xt != null)
                 {
                     extras[pair.GltfMaterialIndex] = xt;
+                }
+            }
+
+            return extras;
+        }
+
+        private static VrmxtMaterialsMtoonxtExtension[] BuildExtrasByIndex(
+            GameObject root,
+            VrmxtMaterialsMtoonxtInstance store
+        )
+        {
+            var count = 0;
+            for (var i = 0; i < store.Pairs.Count; i++)
+            {
+                var pair = store.Pairs[i];
+                if (pair != null && pair.GltfMaterialIndex >= count)
+                {
+                    count = pair.GltfMaterialIndex + 1;
+                }
+            }
+
+            var extras = new VrmxtMaterialsMtoonxtExtension[count];
+            for (var i = 0; i < store.Pairs.Count; i++)
+            {
+                var pair = store.Pairs[i];
+                if (
+                    pair == null
+                    || pair.GltfMaterialIndex < 0
+                    || pair.GltfMaterialIndex >= count
+                )
+                {
+                    continue;
+                }
+
+                var extension = VrmxtMaterialsMtoonxtAuthoring.ToExtension(root, store, pair);
+                if (extension != null)
+                {
+                    extras[pair.GltfMaterialIndex] = extension;
                 }
             }
 
@@ -448,6 +554,7 @@ namespace UniVRMXT.Mtoonxt
             }
 
             TrySetFloat(material, "_M_CullMode", doubleSided ? 0f : 2f);
+            TrySetFloat(material, "_M_ColorMask", 15f);
             SetKeyword(material, VrmxtMaterialsMtoonxt.OverlayDepthKeyword, false);
             SetKeyword(material, VrmxtMaterialsMtoonxt.OutlineOverlayDepthKeyword, false);
             ApplyOverlayColorPasses(material, bodyOverlay: false, outlineOverlay: false);
@@ -676,6 +783,36 @@ namespace UniVRMXT.Mtoonxt
             }
 
             TrySetFloat(material, "_M_ZWrite", zWrite.Value ? 1f : 0f);
+        }
+
+        public static void ApplyRelationshipPass(
+            Material material,
+            VrmxtMtoonxtRelationshipPass pass,
+            int localRef,
+            int gpuBase
+        )
+        {
+            if (material == null || pass == null)
+            {
+                return;
+            }
+
+            var stencil = VrmxtMaterialsMtoonxtStencil.Compiled(
+                localRef,
+                pass.Comp,
+                pass.Pass
+            );
+            ApplyStencil(material, stencil, outline: false, gpuBase);
+            ApplyStencil(material, stencil, outline: true, gpuBase);
+            ApplyZTest(material, pass.ZTest);
+            ApplyZWrite(material, pass.ZWrite);
+            var doubleSided =
+                material.HasProperty("_DoubleSided") && material.GetInt("_DoubleSided") != 0;
+            TrySetFloat(material, "_M_CullMode", pass.CullBack && !doubleSided ? 2f : 0f);
+            TrySetFloat(material, "_M_ColorMask", pass.WriteColor ? 15f : 0f);
+            SetKeyword(material, VrmxtMaterialsMtoonxt.OverlayDepthKeyword, false);
+            SetKeyword(material, VrmxtMaterialsMtoonxt.OutlineOverlayDepthKeyword, false);
+            ApplyOverlayColorPasses(material, bodyOverlay: false, outlineOverlay: false);
         }
 
         /// <summary>

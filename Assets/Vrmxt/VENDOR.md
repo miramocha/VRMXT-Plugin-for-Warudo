@@ -78,18 +78,21 @@ node rest (UniVRM/Blender), not Warudo's identity bone frame. Sets identity
 | Item | Value |
 |------|--------|
 | Source | UniVRMXT `Runtime/Format` + `Runtime/Vfx` + `Runtime/MaterialsOverride` + `Runtime/Mtoonxt` + `Runtime/VrmxtInstance` + particle/sample shaders |
-| Date | 2026-08-22 |
+| Date | 2026-09-13 |
+| Pin | UniVRMXT `origin/main` `73771e1` (shared-reader / cyclic stencil graph) |
 
 ## Included
 
-- Format: `VrmxtVfx.cs`, `VrmxtMaterialsOverride.cs`, `VrmxtMaterialsMtoonxt.cs`, `VrmxtMaterialsMtoonxtStencilCompiler.cs`, `VrmxtMaterialsMtoonxtStencilRefs.cs`, `GlbChunks.cs` (includes `TryRebuild`), `GltfImageBytes.cs`
+- Format: `VrmxtVfx.cs`, `VrmxtMaterialsOverride.cs`, `VrmxtMaterialsMtoonxt.cs`, `VrmxtMaterialsMtoonxtRelationships.cs`, `VrmxtMaterialsMtoonxtStencilCompiler.cs`, `VrmxtMaterialsMtoonxtStencilRefs.cs`, `GlbChunks.cs` (includes `TryRebuild`), `GltfImageBytes.cs`
 - Vfx: Runtime, Instance, Mapper, Data, Importer, GlbTextures, NodeResolver, OwnedParticleMaterial
 - MaterialsOverride: Runtime, Applier, Instance, UnityOverrideSelector, Authoring, Exporter
   (Exporter is a compile dep of Authoring `ResolveUnityVariant`; Warudo does not call export)
-- Mtoonxt: Instance, Runtime, Applier, Authoring
+- Mtoonxt: Instance, Runtime, Applier, Authoring, RelationshipCompiler, RelationshipApplier, StencilGraph, StencilGraphRenderer, AuxiliaryRenderer, DrawOrder, DrawWarning. Warudo copies of GraphRenderer / RelationshipApplier call `VrmxtMaterialsOverrideApplier.ResolveShader` instead of `Shader.Find` (uMod `Shader.Find` is null).
 - Facade: `VrmxtInstance.cs`
 - Shaders: `Shaders/VrmxtParticlesUnlit.shader` (`VRMXT/Particles Unlit`),
+  `Shaders/VrmxtStencilCoverageMask.shader` (`Hidden/UniVRMXT/StencilCoverageMask`),
   `Shaders/VrmxtTestOverrideBuiltin.shader`, `Shaders/VrmxtTestOverrideURP.shader`
+  (sample shaders from UniVRMXT `Samples~/TestMaterialsForOverrides/Shaders`)
 - Resources: `Resources/UniVRMXT/ParticlesUnlit.mat`,
   `VrmxtTestOverrideBuiltin.mat`, `VrmxtTestOverrideURP.mat`, `VrmxtTestTexture.png`
 
