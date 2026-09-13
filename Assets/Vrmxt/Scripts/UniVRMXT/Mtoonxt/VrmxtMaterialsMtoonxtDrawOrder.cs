@@ -74,25 +74,50 @@ namespace UniVRMXT.Mtoonxt
             }
 
             var seen = new HashSet<long>();
-            for (var i = 0; i < instance.Stencils.Count; i++)
+
+            if (IsClip(pair.BodyOp))
             {
-                var stencil = instance.Stencils[i];
-                if (stencil == null)
+                AddWriterList(pair.StencilTargets, focus, writerIsSelf: false, seen, warnings);
+            }
+
+            if (IsClip(pair.OutlineOp))
+            {
+                AddWriterList(
+                    pair.OutlineStencilTargets,
+                    focus,
+                    writerIsSelf: false,
+                    seen,
+                    warnings
+                );
+            }
+
+            if (!IsWrite(pair.BodyOp) && !IsWrite(pair.OutlineOp))
+            {
+                return warnings;
+            }
+
+            for (var i = 0; i < instance.Pairs.Count; i++)
+            {
+                var other = instance.Pairs[i];
+                if (other == null || other == pair)
                 {
                     continue;
                 }
 
-                if (ListContains(stencil.Readers, focus))
+                var reader = ResolvePairMaterial(root, other);
+                if (reader == null)
                 {
-                    AddWriterList(stencil.Writers, focus, writerIsSelf: false, seen, warnings);
+                    continue;
                 }
 
-                if (ListContains(stencil.Writers, focus) && stencil.Readers != null)
+                if (IsClip(other.BodyOp) && ListContains(other.StencilTargets, focus))
                 {
-                    for (var j = 0; j < stencil.Readers.Count; j++)
-                    {
-                        TryAddPair(focus, stencil.Readers[j], writerIsSelf: true, seen, warnings);
-                    }
+                    TryAddPair(focus, reader, writerIsSelf: true, seen, warnings);
+                }
+
+                if (IsClip(other.OutlineOp) && ListContains(other.OutlineStencilTargets, focus))
+                {
+                    TryAddPair(focus, reader, writerIsSelf: true, seen, warnings);
                 }
             }
 
@@ -203,6 +228,30 @@ namespace UniVRMXT.Mtoonxt
             }
 
             return false;
+        }
+
+        private static bool IsClip(VrmxtMtoonxtBodyStencilOp op)
+        {
+            return op == VrmxtMtoonxtBodyStencilOp.ClipInside
+                || op == VrmxtMtoonxtBodyStencilOp.ClipInsideOverlay
+                || op == VrmxtMtoonxtBodyStencilOp.ClipOutside;
+        }
+
+        private static bool IsClip(VrmxtMtoonxtOutlineStencilOp op)
+        {
+            return op == VrmxtMtoonxtOutlineStencilOp.ClipInside
+                || op == VrmxtMtoonxtOutlineStencilOp.ClipInsideOverlay
+                || op == VrmxtMtoonxtOutlineStencilOp.ClipOutside;
+        }
+
+        private static bool IsWrite(VrmxtMtoonxtBodyStencilOp op)
+        {
+            return op == VrmxtMtoonxtBodyStencilOp.Write;
+        }
+
+        private static bool IsWrite(VrmxtMtoonxtOutlineStencilOp op)
+        {
+            return op == VrmxtMtoonxtOutlineStencilOp.Write;
         }
     }
 }

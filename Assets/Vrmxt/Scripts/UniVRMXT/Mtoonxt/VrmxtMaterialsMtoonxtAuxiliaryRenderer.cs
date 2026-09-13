@@ -16,7 +16,7 @@ namespace UniVRMXT.Mtoonxt
     }
 
     /// <summary>
-    /// Retained Built-in-pipeline passes for stencil modes that cannot be
+    /// Retained Built-in-pipeline passes for relationship modes that cannot be
     /// represented by one material pass (M02/M07/M08 and coverage masks).
     /// </summary>
     [ExecuteAlways]
@@ -70,9 +70,9 @@ namespace UniVRMXT.Mtoonxt
             if (draws.Count == 0)
             {
                 var store = GetComponent<VrmxtMaterialsMtoonxtInstance>();
-                if (store != null && store.Stencils.Count > 0)
+                if (store != null && store.StencilRelationships.Count > 0)
                 {
-                    VrmxtMaterialsMtoonxtApplier.ReapplyStencils(gameObject, store);
+                    VrmxtMaterialsMtoonxtApplier.ReapplyRelationships(gameObject, store);
                 }
             }
 
@@ -107,7 +107,7 @@ namespace UniVRMXT.Mtoonxt
                 return;
             }
 
-            var before = new CommandBuffer { name = "UniVRMXT Stencil Prepass" };
+            var before = new CommandBuffer { name = "UniVRMXT Stencil Relationship Prepass" };
             for (var i = 0; i < draws.Count; i++)
             {
                 var draw = draws[i];

@@ -4,6 +4,9 @@ Shader "VRMXT/Samples/TestOverrideURP"
     {
         // Visible unlit albedo: sample × _Color (default yellow tint).
         _MainTex ("Main Texture", 2D) = "white" {}
+        // Poiyomi-style hidden companions (CaptureProperties must keep these).
+        [HideInInspector] _MainTexPan ("Panning", Vector) = (0, 0, 0, 0)
+        [HideInInspector] _FeatureEnable ("Enable Feature", Float) = 0
         _Color ("Main Color", Color) = (1, 1, 0, 1)
 
         // Binding targets (Unity profile / VRMC_materials_mtoon sources).

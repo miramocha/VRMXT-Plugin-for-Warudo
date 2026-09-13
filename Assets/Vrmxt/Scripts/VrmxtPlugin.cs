@@ -21,9 +21,9 @@ using Warudo.Plugins.Core.Assets.Character;
     Id = "mira.vrmxt",
     Name = "VRMXT",
     Description = "VRMXT extensions for Warudo Characters (VFX + materials override + MToonXT)",
-    Version = "0.1.17",
+    Version = "0.1.18",
     Author = "Mira",
-    SupportUrl = "https://github.com/miramocha/UniVRMXT",
+    SupportUrl = "https://github.com/vrmxt/UniVRMXT",
     AssetTypes = new[] { typeof(VrmxtManagerAsset) }
 )]
 public sealed class VrmxtPlugin : Plugin
@@ -178,6 +178,9 @@ public sealed class VrmxtPlugin : Plugin
     public const string ParticleShaderAssetPath =
         "Assets/Vrmxt/Shaders/VrmxtParticlesUnlit.shader";
 
+    public const string StencilCoverageShaderAssetPath =
+        "Assets/Vrmxt/Shaders/VrmxtStencilCoverageMask.shader";
+
     public const string MaterialsOverrideBuiltinShaderAssetPath =
         "Assets/Vrmxt/Shaders/VrmxtTestOverrideBuiltin.shader";
 
@@ -201,6 +204,7 @@ public sealed class VrmxtPlugin : Plugin
         ActiveInstance = this;
         BindPackagedParticleMaterial();
         WarmPackagedMaterialsOverrideShaders();
+        WarmPackagedStencilCoverageShader();
         BindMaterialsOverrideShaderResolve();
         BindMaterialsOverrideActivePipeline();
         VrmxtShaderInventory.ExtraNamesProvider = () => _modShaders.Keys;
@@ -381,6 +385,12 @@ public sealed class VrmxtPlugin : Plugin
 
             return shader;
         };
+    }
+
+    private void WarmPackagedStencilCoverageShader()
+    {
+        RememberModShader(
+            WarmModAsset<Shader>(StencilCoverageShaderAssetPath, "stencil coverage shader"));
     }
 
     private void ClearMaterialsOverrideShaderResolve()

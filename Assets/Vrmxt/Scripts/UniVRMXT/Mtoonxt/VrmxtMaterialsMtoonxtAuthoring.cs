@@ -54,49 +54,49 @@ namespace UniVRMXT.Mtoonxt
             }
         }
 
-        public static void PopulateStencils(
+        public static void PopulateRelationships(
             GameObject root,
             VrmxtMaterialsMtoonxtInstance store,
-            IReadOnlyList<VrmxtMaterialsMtoonxtStencil> stencils
+            IReadOnlyList<VrmxtMaterialsMtoonxtRelationship> relationships
         )
         {
-            var authored = new List<VrmxtMaterialsMtoonxtStencilAuthoring>();
-            if (store == null || stencils == null)
+            var authored = new List<VrmxtMaterialsMtoonxtRelationshipAuthoring>();
+            if (store == null || relationships == null)
             {
-                store?.SetStencils(authored);
+                store?.SetStencilRelationships(authored);
                 return;
             }
 
-            for (var i = 0; i < stencils.Count; i++)
+            for (var i = 0; i < relationships.Count; i++)
             {
-                var stencil = stencils[i];
-                if (stencil == null)
+                var relationship = relationships[i];
+                if (relationship == null)
                 {
                     continue;
                 }
 
-                var next = new VrmxtMaterialsMtoonxtStencilAuthoring(
-                    ToMaterialList(root, store, stencil.Writers),
-                    ToMaterialList(root, store, stencil.Readers)
+                var next = new VrmxtMaterialsMtoonxtRelationshipAuthoring(
+                    ToMaterialList(root, store, relationship.Writers),
+                    ToMaterialList(root, store, relationship.Readers)
                 )
                 {
                     Comparison = string.Equals(
-                        stencil.Comparison,
-                        VrmxtMaterialsMtoonxtStencils.ComparisonInside,
+                        relationship.Comparison,
+                        VrmxtMaterialsMtoonxtRelationships.ComparisonInside,
                         StringComparison.Ordinal
                     )
-                        ? VrmxtMtoonxtStencilComparison.Inside
-                        : VrmxtMtoonxtStencilComparison.Outside,
-                    ShowWritersThroughOccluders = stencil.ShowWritersThroughOccluders,
-                    WritersOnlyInsideReaders = stencil.WritersOnlyInsideReaders,
-                    WritersOnlyOutsideReaders = stencil.WritersOnlyOutsideReaders,
-                    WritersSelfOcclude = stencil.WritersSelfOcclude,
-                    IgnoreOccludedReaderAreas = stencil.IgnoreOccludedReaderAreas,
-                    WritersWriteColor = stencil.WritersWriteColor,
-                    WritersWriteDepth = stencil.WritersWriteDepth,
-                    ReadersWriteDepth = stencil.ReadersWriteDepth,
-                    WriterDepthTest = DepthTestFromPortable(stencil.WriterDepthTest),
-                    ReaderDepthTest = DepthTestFromPortable(stencil.ReaderDepthTest),
+                        ? VrmxtMtoonxtRelationshipComparison.Inside
+                        : VrmxtMtoonxtRelationshipComparison.Outside,
+                    ShowWritersThroughOccluders = relationship.ShowWritersThroughOccluders,
+                    WritersOnlyInsideReaders = relationship.WritersOnlyInsideReaders,
+                    WritersOnlyOutsideReaders = relationship.WritersOnlyOutsideReaders,
+                    WritersSelfOcclude = relationship.WritersSelfOcclude,
+                    IgnoreOccludedReaderAreas = relationship.IgnoreOccludedReaderAreas,
+                    WritersWriteColor = relationship.WritersWriteColor,
+                    WritersWriteDepth = relationship.WritersWriteDepth,
+                    ReadersWriteDepth = relationship.ReadersWriteDepth,
+                    WriterDepthTest = DepthTestFromPortable(relationship.WriterDepthTest),
+                    ReaderDepthTest = DepthTestFromPortable(relationship.ReaderDepthTest),
                 };
                 if (next.Writers.Count > 0 && next.Readers.Count > 0)
                 {
@@ -104,23 +104,23 @@ namespace UniVRMXT.Mtoonxt
                 }
             }
 
-            store.SetStencils(authored);
+            store.SetStencilRelationships(authored);
         }
 
-        public static List<VrmxtMaterialsMtoonxtStencil> ToStencils(
+        public static List<VrmxtMaterialsMtoonxtRelationship> ToRelationships(
             GameObject root,
             VrmxtMaterialsMtoonxtInstance store
         )
         {
-            var result = new List<VrmxtMaterialsMtoonxtStencil>();
+            var result = new List<VrmxtMaterialsMtoonxtRelationship>();
             if (root == null || store == null)
             {
                 return result;
             }
 
-            for (var i = 0; i < store.Stencils.Count; i++)
+            for (var i = 0; i < store.StencilRelationships.Count; i++)
             {
-                var authored = store.Stencils[i];
+                var authored = store.StencilRelationships[i];
                 if (authored == null || (authored.WritersOnlyInsideReaders && authored.WritersOnlyOutsideReaders))
                 {
                     continue;
@@ -134,12 +134,12 @@ namespace UniVRMXT.Mtoonxt
                 }
 
                 result.Add(
-                    new VrmxtMaterialsMtoonxtStencil(
+                    new VrmxtMaterialsMtoonxtRelationship(
                         writers,
                         readers,
-                        authored.Comparison == VrmxtMtoonxtStencilComparison.Inside
-                            ? VrmxtMaterialsMtoonxtStencils.ComparisonInside
-                            : VrmxtMaterialsMtoonxtStencils.ComparisonOutside,
+                        authored.Comparison == VrmxtMtoonxtRelationshipComparison.Inside
+                            ? VrmxtMaterialsMtoonxtRelationships.ComparisonInside
+                            : VrmxtMaterialsMtoonxtRelationships.ComparisonOutside,
                         authored.ShowWritersThroughOccluders,
                         authored.WritersOnlyInsideReaders,
                         authored.WritersOnlyOutsideReaders,
@@ -157,20 +157,20 @@ namespace UniVRMXT.Mtoonxt
             return result;
         }
 
-        public static List<VrmxtMaterialsMtoonxtStencil> ToExportStencils(
+        public static List<VrmxtMaterialsMtoonxtRelationship> ToExportRelationships(
             VrmxtMaterialsMtoonxtInstance store,
             Func<Material, int?> resolveMaterialIndex
         )
         {
-            var result = new List<VrmxtMaterialsMtoonxtStencil>();
+            var result = new List<VrmxtMaterialsMtoonxtRelationship>();
             if (store == null || resolveMaterialIndex == null)
             {
                 return result;
             }
 
-            for (var i = 0; i < store.Stencils.Count; i++)
+            for (var i = 0; i < store.StencilRelationships.Count; i++)
             {
-                var authored = store.Stencils[i];
+                var authored = store.StencilRelationships[i];
                 if (
                     authored == null
                     || (authored.WritersOnlyInsideReaders && authored.WritersOnlyOutsideReaders)
@@ -191,12 +191,12 @@ namespace UniVRMXT.Mtoonxt
                 }
 
                 result.Add(
-                    new VrmxtMaterialsMtoonxtStencil(
+                    new VrmxtMaterialsMtoonxtRelationship(
                         writers,
                         readers,
-                        authored.Comparison == VrmxtMtoonxtStencilComparison.Inside
-                            ? VrmxtMaterialsMtoonxtStencils.ComparisonInside
-                            : VrmxtMaterialsMtoonxtStencils.ComparisonOutside,
+                        authored.Comparison == VrmxtMtoonxtRelationshipComparison.Inside
+                            ? VrmxtMaterialsMtoonxtRelationships.ComparisonInside
+                            : VrmxtMaterialsMtoonxtRelationships.ComparisonOutside,
                         authored.ShowWritersThroughOccluders,
                         authored.WritersOnlyInsideReaders,
                         authored.WritersOnlyOutsideReaders,
@@ -225,7 +225,18 @@ namespace UniVRMXT.Mtoonxt
                 return;
             }
 
-            VrmxtMaterialsMtoonxt.TryParse(pair.ExtensionJson, out _);
+            if (!VrmxtMaterialsMtoonxt.TryParse(pair.ExtensionJson, out var xt) || xt == null)
+            {
+                return;
+            }
+
+            pair.BodyOp = BodyOpFromStencil(xt.Stencil);
+            pair.OutlineOp = OutlineOpFromStencil(xt.OutlineStencil);
+            ReplaceMaterials(pair.StencilTargets, ToMaterialList(root, store, xt.Stencil));
+            ReplaceMaterials(
+                pair.OutlineStencilTargets,
+                ToMaterialList(root, store, xt.OutlineStencil)
+            );
         }
 
         public static VrmxtMaterialsMtoonxtExtension ToExtension(
@@ -251,7 +262,221 @@ namespace UniVRMXT.Mtoonxt
                 zWrite = imported.ZWrite;
             }
 
-            return new VrmxtMaterialsMtoonxtExtension(zTest, zWrite);
+            return new VrmxtMaterialsMtoonxtExtension(
+                null,
+                null,
+                zTest,
+                zWrite
+            );
+        }
+
+        private static VrmxtMaterialsMtoonxtStencil BodyToStencil(
+            GameObject root,
+            VrmxtMaterialsMtoonxtInstance store,
+            VrmxtMtoonxtBodyStencilOp op,
+            List<Material> targets
+        )
+        {
+            switch (op)
+            {
+                case VrmxtMtoonxtBodyStencilOp.Write:
+                    return VrmxtMaterialsMtoonxtStencil.FromOp(
+                        VrmxtMaterialsMtoonxtStencil.OpWrite,
+                        null
+                    );
+                case VrmxtMtoonxtBodyStencilOp.ClipInside:
+                    return ClipToStencil(
+                        VrmxtMaterialsMtoonxtStencil.OpInside,
+                        root,
+                        store,
+                        targets
+                    );
+                case VrmxtMtoonxtBodyStencilOp.ClipInsideOverlay:
+                    return ClipToStencil(
+                        VrmxtMaterialsMtoonxtStencil.OpInsideOverlay,
+                        root,
+                        store,
+                        targets
+                    );
+                case VrmxtMtoonxtBodyStencilOp.ClipOutside:
+                    return ClipToStencil(
+                        VrmxtMaterialsMtoonxtStencil.OpOutside,
+                        root,
+                        store,
+                        targets
+                    );
+                default:
+                    return null;
+            }
+        }
+
+        private static VrmxtMaterialsMtoonxtStencil OutlineToStencil(
+            GameObject root,
+            VrmxtMaterialsMtoonxtInstance store,
+            VrmxtMtoonxtOutlineStencilOp op,
+            List<Material> targets
+        )
+        {
+            switch (op)
+            {
+                case VrmxtMtoonxtOutlineStencilOp.Same:
+                    return VrmxtMaterialsMtoonxtStencil.FromOp(
+                        VrmxtMaterialsMtoonxtStencil.OpSame,
+                        null
+                    );
+                case VrmxtMtoonxtOutlineStencilOp.Write:
+                    return VrmxtMaterialsMtoonxtStencil.FromOp(
+                        VrmxtMaterialsMtoonxtStencil.OpWrite,
+                        null
+                    );
+                case VrmxtMtoonxtOutlineStencilOp.ClipInside:
+                    return ClipToStencil(
+                        VrmxtMaterialsMtoonxtStencil.OpInside,
+                        root,
+                        store,
+                        targets
+                    );
+                case VrmxtMtoonxtOutlineStencilOp.ClipInsideOverlay:
+                    return ClipToStencil(
+                        VrmxtMaterialsMtoonxtStencil.OpInsideOverlay,
+                        root,
+                        store,
+                        targets
+                    );
+                case VrmxtMtoonxtOutlineStencilOp.ClipOutside:
+                    return ClipToStencil(
+                        VrmxtMaterialsMtoonxtStencil.OpOutside,
+                        root,
+                        store,
+                        targets
+                    );
+                default:
+                    return null;
+            }
+        }
+
+        private static VrmxtMaterialsMtoonxtStencil ClipToStencil(
+            string op,
+            GameObject root,
+            VrmxtMaterialsMtoonxtInstance store,
+            List<Material> targets
+        )
+        {
+            var indices = MaterialsToIndices(root, store, targets);
+            if (indices.Count == 0)
+            {
+                return null;
+            }
+
+            return VrmxtMaterialsMtoonxtStencil.FromOp(op, indices);
+        }
+
+        private static VrmxtMtoonxtBodyStencilOp BodyOpFromStencil(
+            VrmxtMaterialsMtoonxtStencil stencil
+        )
+        {
+            if (stencil == null || !stencil.HasOp)
+            {
+                return VrmxtMtoonxtBodyStencilOp.Off;
+            }
+
+            if (stencil.Op == VrmxtMaterialsMtoonxtStencil.OpWrite)
+            {
+                return VrmxtMtoonxtBodyStencilOp.Write;
+            }
+
+            if (stencil.Op == VrmxtMaterialsMtoonxtStencil.OpInside)
+            {
+                return VrmxtMtoonxtBodyStencilOp.ClipInside;
+            }
+
+            if (stencil.Op == VrmxtMaterialsMtoonxtStencil.OpInsideOverlay)
+            {
+                return VrmxtMtoonxtBodyStencilOp.ClipInsideOverlay;
+            }
+
+            if (stencil.Op == VrmxtMaterialsMtoonxtStencil.OpOutside)
+            {
+                return VrmxtMtoonxtBodyStencilOp.ClipOutside;
+            }
+
+            return VrmxtMtoonxtBodyStencilOp.Off;
+        }
+
+        private static VrmxtMtoonxtOutlineStencilOp OutlineOpFromStencil(
+            VrmxtMaterialsMtoonxtStencil stencil
+        )
+        {
+            if (stencil == null || !stencil.HasOp)
+            {
+                return VrmxtMtoonxtOutlineStencilOp.Off;
+            }
+
+            if (stencil.Op == VrmxtMaterialsMtoonxtStencil.OpSame)
+            {
+                return VrmxtMtoonxtOutlineStencilOp.Same;
+            }
+
+            if (stencil.Op == VrmxtMaterialsMtoonxtStencil.OpWrite)
+            {
+                return VrmxtMtoonxtOutlineStencilOp.Write;
+            }
+
+            if (stencil.Op == VrmxtMaterialsMtoonxtStencil.OpInside)
+            {
+                return VrmxtMtoonxtOutlineStencilOp.ClipInside;
+            }
+
+            if (stencil.Op == VrmxtMaterialsMtoonxtStencil.OpInsideOverlay)
+            {
+                return VrmxtMtoonxtOutlineStencilOp.ClipInsideOverlay;
+            }
+
+            if (stencil.Op == VrmxtMaterialsMtoonxtStencil.OpOutside)
+            {
+                return VrmxtMtoonxtOutlineStencilOp.ClipOutside;
+            }
+
+            return VrmxtMtoonxtOutlineStencilOp.Off;
+        }
+
+        private static void ReplaceMaterials(List<Material> list, List<Material> values)
+        {
+            if (list == null)
+            {
+                return;
+            }
+
+            list.Clear();
+            if (values == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < values.Count; i++)
+            {
+                list.Add(values[i]);
+            }
+        }
+
+        private static List<Material> ToMaterialList(
+            GameObject root,
+            VrmxtMaterialsMtoonxtInstance store,
+            VrmxtMaterialsMtoonxtStencil stencil
+        )
+        {
+            var list = new List<Material>();
+            if (stencil == null || stencil.Materials == null)
+            {
+                return list;
+            }
+
+            for (var i = 0; i < stencil.Materials.Count; i++)
+            {
+                list.Add(FindMaterial(root, store, stencil.Materials[i]));
+            }
+
+            return list;
         }
 
         private static List<Material> ToMaterialList(

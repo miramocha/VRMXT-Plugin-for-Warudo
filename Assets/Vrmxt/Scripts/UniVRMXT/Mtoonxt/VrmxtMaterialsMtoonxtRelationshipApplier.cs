@@ -5,17 +5,17 @@ using UnityEngine;
 
 namespace UniVRMXT.Mtoonxt
 {
-    public static class VrmxtMaterialsMtoonxtStencilApplier
+    public static class VrmxtMaterialsMtoonxtRelationshipApplier
     {
         private const string CoverageShaderName = "Hidden/UniVRMXT/StencilCoverageMask";
-        private const int StencilMaskQueue = 2451;
-        private const int StencilSubjectQueue = 2452;
-        private const int StencilOverlayQueue = 2453;
+        private const int RelationshipMaskQueue = 2451;
+        private const int RelationshipSubjectQueue = 2452;
+        private const int RelationshipOverlayQueue = 2453;
 
         public static int Apply(
             GameObject root,
             VrmxtMaterialsMtoonxtInstance store,
-            IReadOnlyList<VrmxtMtoonxtStencilPlan> plans,
+            IReadOnlyList<VrmxtMtoonxtRelationshipPlan> plans,
             int gpuBase
         )
         {
@@ -26,7 +26,40 @@ namespace UniVRMXT.Mtoonxt
             }
 
             root.GetComponent<VrmxtMaterialsMtoonxtAuxiliaryRenderer>()?.RestoreNativeMaterials();
+            root.GetComponent<VrmxtStencilGraphRenderer>()?.Configure(null);
             var slots = BuildSlots(root, store);
+            if (UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline == null
+                && VrmxtStencilGraph.NeedsCoverage(plans))
+            {
+                ClearAuxiliary(root);
+                var rules = new List<VrmxtStencilReaderCoverage>();
+                var depthPeers = VrmxtStencilGraph.DepthPeers(plans);
+                var neutral = new VrmxtMtoonxtRelationshipPass("always", "keep", "lessEqual", true, false, true);
+                var configured = new HashSet<Material>();
+                foreach (var plan in plans)
+                foreach (var id in new List<int>(plan.Source.Writers))
+                foreach (var slot in FindSlots(slots, new[] { id }))
+                    if (configured.Add(slot.Material))
+                    {
+                        VrmxtMaterialsMtoonxtApplier.ApplyRelationshipPass(slot.Material, neutral, 1, gpuBase);
+                        slot.Material.renderQueue = RelationshipSubjectQueue;
+                    }
+                foreach (var entry in VrmxtStencilGraph.Readers(plans))
+                foreach (var reader in FindSlots(slots, new[] { entry.Key }))
+                {
+                    if (rules.Exists(rule => rule.Reader == reader.Material)) continue;
+                    var rule = new VrmxtStencilReaderCoverage
+                    { Reader = reader.Material, RespectReaderDepth = depthPeers.Contains(entry.Key) };
+                    foreach (var writer in FindSlots(slots, new List<int>(entry.Value)))
+                        if (!rule.Writers.Contains(writer.Material)) rule.Writers.Add(writer.Material);
+                    rules.Add(rule);
+                    VrmxtMaterialsMtoonxtApplier.ApplyRelationshipPass(reader.Material, neutral, 1, gpuBase);
+                    reader.Material.renderQueue = RelationshipSubjectQueue;
+                }
+                var graph = root.GetComponent<VrmxtStencilGraphRenderer>() ?? root.AddComponent<VrmxtStencilGraphRenderer>();
+                graph.Configure(rules);
+                return plans.Count;
+            }
             var draws = new List<VrmxtMtoonxtAuxiliaryDraw>();
             var owned = new List<Material>();
             var applied = 0;
@@ -46,11 +79,11 @@ namespace UniVRMXT.Mtoonxt
                 }
 
                 var writerQueue = plan.WritersStampMask
-                    ? StencilMaskQueue
-                    : StencilSubjectQueue;
+                    ? RelationshipMaskQueue
+                    : RelationshipSubjectQueue;
                 var readerQueue = plan.ReadersStampMask
-                    ? StencilMaskQueue
-                    : StencilSubjectQueue;
+                    ? RelationshipMaskQueue
+                    : RelationshipSubjectQueue;
                 ApplyPass(writerSlots, plan.WriterPrimary, plan.LocalRef, gpuBase, writerQueue);
                 if (plan.Reader != null)
                 {
@@ -63,7 +96,7 @@ namespace UniVRMXT.Mtoonxt
                         writerSlots,
                         plan,
                         gpuBase,
-                        StencilOverlayQueue,
+                        RelationshipOverlayQueue,
                         draws,
                         owned
                     );
@@ -191,7 +224,7 @@ namespace UniVRMXT.Mtoonxt
 
         private static void ApplyPass(
             IReadOnlyList<MaterialSlot> slots,
-            VrmxtMtoonxtStencilPass pass,
+            VrmxtMtoonxtRelationshipPass pass,
             int localRef,
             int gpuBase,
             int queue
@@ -211,7 +244,7 @@ namespace UniVRMXT.Mtoonxt
                     continue;
                 }
 
-                VrmxtMaterialsMtoonxtApplier.ApplyStencilPass(
+                VrmxtMaterialsMtoonxtApplier.ApplyRelationshipPass(
                     material,
                     pass,
                     localRef,
@@ -223,7 +256,7 @@ namespace UniVRMXT.Mtoonxt
 
         private static void AddSecondaryDraws(
             IReadOnlyList<MaterialSlot> writerSlots,
-            VrmxtMtoonxtStencilPlan plan,
+            VrmxtMtoonxtRelationshipPlan plan,
             int gpuBase,
             int queue,
             ICollection<VrmxtMtoonxtAuxiliaryDraw> draws,
@@ -238,11 +271,11 @@ namespace UniVRMXT.Mtoonxt
                 {
                     clone = new Material(slot.Material)
                     {
-                        name = slot.Material.name + " (VRMXT stencil overlay)",
+                        name = slot.Material.name + " (VRMXT relationship overlay)",
                         hideFlags = HideFlags.HideAndDontSave,
                         renderQueue = queue,
                     };
-                    VrmxtMaterialsMtoonxtApplier.ApplyStencilPass(
+                    VrmxtMaterialsMtoonxtApplier.ApplyRelationshipPass(
                         clone,
                         plan.WriterSecondary,
                         plan.LocalRef,
@@ -274,7 +307,7 @@ namespace UniVRMXT.Mtoonxt
         }
 
         private static void AddCoverageDraws(
-            VrmxtMtoonxtStencilPlan plan,
+            VrmxtMtoonxtRelationshipPlan plan,
             int gpuBase,
             IReadOnlyList<MaterialSlot> writerSlots,
             IReadOnlyList<MaterialSlot> readerSlots,
@@ -282,16 +315,16 @@ namespace UniVRMXT.Mtoonxt
             ICollection<Material> owned
         )
         {
-            var shader = Shader.Find(CoverageShaderName);
+            var shader = VrmxtMaterialsOverrideApplier.ResolveShader(CoverageShaderName);
             if (shader == null)
             {
-                Debug.LogWarning("UniVRMXT: stencil coverage shader is missing.");
+                Debug.LogWarning("UniVRMXT: stencil relationship coverage shader is missing.");
                 return;
             }
 
             var material = new Material(shader)
             {
-                name = "UniVRMXT stencil coverage " + plan.LocalRef,
+                name = "UniVRMXT relationship coverage " + plan.LocalRef,
                 hideFlags = HideFlags.HideAndDontSave,
             };
             var gpuRef = VrmxtMaterialsMtoonxtStencilRefs.GpuRef(plan.LocalRef, gpuBase);
@@ -409,6 +442,7 @@ namespace UniVRMXT.Mtoonxt
         private static void ClearAuxiliary(GameObject root)
         {
             root?.GetComponent<VrmxtMaterialsMtoonxtAuxiliaryRenderer>()?.Configure(null, null);
+            root?.GetComponent<VrmxtStencilGraphRenderer>()?.Configure(null);
         }
 
         private readonly struct MaterialSlot
